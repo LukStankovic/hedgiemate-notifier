@@ -1,6 +1,6 @@
 module github.com/hedgiemate/notifier
 
-go 1.23.0
+go 1.26.0
 
 require github.com/eclipse/paho.mqtt.golang v1.5.0
 
