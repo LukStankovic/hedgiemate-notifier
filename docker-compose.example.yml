@@ -1,0 +1,14 @@
+version: "3"
+
+services:
+  hedgiemate-notifier:
+    image: hedgiemate/notifier:latest
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+    environment:
+      HEDGIEMATE_USER_TOKEN: "hm_your_token_here"
+      MQTT_HOST: "mosquitto"
+      MQTT_PORT: "1883"
+      CAR_IDS: "1"
+      LOG_LEVEL: "info"
