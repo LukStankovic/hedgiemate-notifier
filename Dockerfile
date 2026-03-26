@@ -6,6 +6,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /notifier .
 
 FROM alpine:3.19
-RUN apk --no-cache add ca-certificates
+RUN apk --no-cache add ca-certificates && mkdir -p /data
 COPY --from=builder /notifier /usr/local/bin/notifier
+VOLUME ["/data"]
 ENTRYPOINT ["notifier"]

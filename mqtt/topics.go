@@ -20,6 +20,12 @@ const (
 	FieldTimeToFullCharge  TopicField = "time_to_full_charge"
 	FieldRatedRangeKm      TopicField = "rated_battery_range_km"
 	FieldUsableBattery     TopicField = "usable_battery_level"
+	FieldDisplayName       TopicField = "display_name"
+	FieldChargeLimitSoc    TopicField = "charge_limit_soc"
+	FieldUpdateVersion     TopicField = "update_version"
+	FieldSpeed             TopicField = "speed"
+	FieldOutsideTemp       TopicField = "outside_temp"
+	FieldOdometer          TopicField = "odometer"
 )
 
 var allFields = []TopicField{
@@ -34,24 +40,52 @@ var allFields = []TopicField{
 	FieldTimeToFullCharge,
 	FieldRatedRangeKm,
 	FieldUsableBattery,
+	FieldDisplayName,
+	FieldChargeLimitSoc,
+	FieldUpdateVersion,
+	FieldSpeed,
+	FieldOutsideTemp,
+	FieldOdometer,
 }
 
+// knownFields is a fast lookup set for filtering incoming messages.
+var knownFields = func() map[TopicField]bool {
+	m := make(map[TopicField]bool, len(allFields))
+	for _, f := range allFields {
+		m[f] = true
+	}
+	return m
+}()
+
 // TopicsForCar returns the list of MQTT topics to subscribe to for a given car ID.
-func TopicsForCar(carID string) []string {
+// The namespace parameter is the raw MQTT_NAMESPACE value (e.g. "my_ns" or "").
+func TopicsForCar(carID, namespace string) []string {
+	nsPart := ""
+	if namespace != "" {
+		nsPart = "/" + namespace
+	}
 	topics := make([]string, 0, len(allFields))
 	for _, f := range allFields {
-		topics = append(topics, fmt.Sprintf("teslamate/cars/%s/%s", carID, f))
+		topics = append(topics, fmt.Sprintf("teslamate%s/cars/%s/%s", nsPart, carID, f))
 	}
 	return topics
 }
 
 // ParseTopic extracts the car ID and field from a topic string.
-// Returns empty strings if the topic does not match the expected pattern.
+// Supports both namespaced (teslamate/ns/cars/{id}/{field}) and
+// non-namespaced (teslamate/cars/{id}/{field}) topic formats.
 func ParseTopic(topic string) (carID string, field TopicField, ok bool) {
-	// Expected format: teslamate/cars/{id}/{field}
-	parts := strings.SplitN(topic, "/", 4)
-	if len(parts) != 4 || parts[0] != "teslamate" || parts[1] != "cars" {
-		return "", "", false
+	parts := strings.Split(topic, "/")
+
+	// Non-namespaced: teslamate/cars/{id}/{field} (4 parts)
+	if len(parts) == 4 && parts[0] == "teslamate" && parts[1] == "cars" {
+		return parts[2], TopicField(parts[3]), true
 	}
-	return parts[2], TopicField(parts[3]), true
+
+	// Namespaced: teslamate/{namespace}/cars/{id}/{field} (5 parts)
+	if len(parts) == 5 && parts[0] == "teslamate" && parts[2] == "cars" {
+		return parts[3], TopicField(parts[4]), true
+	}
+
+	return "", "", false
 }

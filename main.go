@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/hedgiemate/notifier/config"
 	"github.com/hedgiemate/notifier/mqtt"
@@ -32,9 +33,12 @@ func main() {
 		"car_ids", cfg.CarIDs,
 		"mqtt_host", cfg.MQTTHost,
 		"mqtt_port", cfg.MQTTPort,
+		"mqtt_tls", cfg.MQTTTLS,
+		"mqtt_namespace", cfg.MQTTNamespace,
 		"relay_url", cfg.RelayURL,
 		"battery_low_threshold", cfg.BatteryLowThresh,
 		"battery_high_threshold", cfg.BatteryHighThresh,
+		"distance_unit", cfg.DistanceUnit,
 	)
 
 	// Initialize relay client
@@ -44,7 +48,7 @@ func main() {
 	emitter := state.NewEventEmitter(relayClient, logger)
 
 	// Initialize state manager
-	stateMgr := state.NewManager(emitter, cfg.BatteryLowThresh, cfg.BatteryHighThresh, logger)
+	stateMgr := state.NewManager(emitter, cfg.BatteryLowThresh, cfg.BatteryHighThresh, cfg.DistanceUnit, logger)
 
 	// Initialize MQTT client
 	mqttClient := mqtt.NewClient(
@@ -53,6 +57,8 @@ func main() {
 		cfg.MQTTUsername,
 		cfg.MQTTPassword,
 		cfg.MQTTClientID,
+		cfg.MQTTTLS,
+		cfg.MQTTNamespace,
 		cfg.CarIDs,
 		stateMgr.HandleMessage,
 		logger,
@@ -66,6 +72,31 @@ func main() {
 
 	logger.Info("hedgiemate-notifier running, waiting for MQTT messages")
 
+	// Send notifier_connected event
+	connectedEvent := relay.EventPayload{
+		EventType: "notifier_connected",
+		CarID:     cfg.CarIDs[0],
+		Timestamp: time.Now(),
+	}
+	if err := relayClient.SendEvent(connectedEvent); err != nil {
+		logger.Warn("failed to send notifier_connected event", "error", err)
+	}
+
+	// Start periodic heartbeat goroutine
+	heartbeatTicker := time.NewTicker(6 * time.Hour)
+	go func() {
+		for range heartbeatTicker.C {
+			heartbeatEvent := relay.EventPayload{
+				EventType: "notifier_heartbeat",
+				CarID:     cfg.CarIDs[0],
+				Timestamp: time.Now(),
+			}
+			if err := relayClient.SendEvent(heartbeatEvent); err != nil {
+				logger.Warn("failed to send notifier_heartbeat event", "error", err)
+			}
+		}
+	}()
+
 	// Wait for shutdown signal
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -74,6 +105,7 @@ func main() {
 	logger.Info("received shutdown signal", "signal", sig.String())
 
 	// Graceful shutdown
+	heartbeatTicker.Stop()
 	stateMgr.Stop()
 	emitter.Stop()
 	mqttClient.Disconnect()

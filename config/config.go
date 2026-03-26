@@ -8,17 +8,20 @@ import (
 )
 
 type Config struct {
-	UserToken          string
-	MQTTHost           string
-	MQTTPort           string
-	MQTTUsername       string
-	MQTTPassword       string
-	MQTTClientID       string
-	CarIDs             []string
-	RelayURL           string
-	BatteryLowThresh   int
-	BatteryHighThresh  int
-	LogLevel           string
+	UserToken         string
+	MQTTHost          string
+	MQTTPort          string
+	MQTTUsername      string
+	MQTTPassword      string
+	MQTTClientID      string
+	MQTTTLS           bool
+	MQTTNamespace     string
+	CarIDs            []string
+	RelayURL          string
+	BatteryLowThresh  int
+	BatteryHighThresh int
+	LogLevel          string
+	DistanceUnit      string
 }
 
 func Load() (*Config, error) {
@@ -37,13 +40,21 @@ func Load() (*Config, error) {
 	mqttPassword := os.Getenv("MQTT_PASSWORD")
 	mqttClientID := envOrDefault("MQTT_CLIENT_ID", "hedgiemate-notifier")
 
+	mqttTLS := strings.EqualFold(os.Getenv("MQTT_TLS"), "true")
+	mqttNamespace := os.Getenv("MQTT_NAMESPACE")
+
+	// If TLS is enabled and port is still the default non-TLS port, switch to 8883
+	if mqttTLS && mqttPort == "1883" {
+		mqttPort = "8883"
+	}
+
 	carIDsStr := envOrDefault("CAR_IDS", "1")
 	carIDs := strings.Split(carIDsStr, ",")
 	for i := range carIDs {
 		carIDs[i] = strings.TrimSpace(carIDs[i])
 	}
 
-	relayURL := envOrDefault("RELAY_URL", "https://relay.hedgiemate.com")
+	relayURL := envOrDefault("RELAY_URL", "https://push.hedgiemate.com")
 	relayURL = strings.TrimRight(relayURL, "/")
 
 	batteryLow, err := envOrDefaultInt("BATTERY_LOW_THRESHOLD", 20)
@@ -58,18 +69,26 @@ func Load() (*Config, error) {
 
 	logLevel := envOrDefault("LOG_LEVEL", "info")
 
+	distanceUnit := strings.ToLower(envOrDefault("DISTANCE_UNIT", "km"))
+	if distanceUnit != "km" && distanceUnit != "mi" {
+		distanceUnit = "km"
+	}
+
 	return &Config{
 		UserToken:         userToken,
 		MQTTHost:          mqttHost,
 		MQTTPort:          mqttPort,
-		MQTTUsername:       mqttUsername,
-		MQTTPassword:       mqttPassword,
-		MQTTClientID:       mqttClientID,
+		MQTTUsername:      mqttUsername,
+		MQTTPassword:      mqttPassword,
+		MQTTClientID:      mqttClientID,
+		MQTTTLS:           mqttTLS,
+		MQTTNamespace:     mqttNamespace,
 		CarIDs:            carIDs,
 		RelayURL:          relayURL,
 		BatteryLowThresh:  batteryLow,
 		BatteryHighThresh: batteryHigh,
 		LogLevel:          logLevel,
+		DistanceUnit:      distanceUnit,
 	}, nil
 }
 

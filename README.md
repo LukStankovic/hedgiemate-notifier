@@ -120,3 +120,7 @@ MQTT Broker ──> MQTT Client ──> State Machine ──> Event Emitter ─�
 - **State Machine**: Tracks per-car state, detects transitions, manages battery threshold flags
 - **Event Emitter**: 5-second debounce window, prevents duplicate events
 - **Relay Client**: HMAC-SHA256 signed requests, 3 retries with exponential backoff
+
+---
+
+**Disclaimer:** This project is an unofficial community tool and is not affiliated with, endorsed by, or supported by the official TeslaMate project.

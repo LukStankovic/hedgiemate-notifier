@@ -63,6 +63,7 @@ func (c *Client) SendEvent(payload EventPayload) error {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-HedgieMate-Signature", signature)
 		req.Header.Set("X-HedgieMate-Timestamp", timestamp)
+		req.Header.Set("X-HedgieMate-User-Token", c.userToken)
 
 		resp, err := c.http.Do(req)
 		if err != nil {
