@@ -26,6 +26,7 @@ const (
 	FieldSpeed             TopicField = "speed"
 	FieldOutsideTemp       TopicField = "outside_temp"
 	FieldOdometer          TopicField = "odometer"
+	FieldActiveRoute       TopicField = "active_route"
 )
 
 var allFields = []TopicField{
@@ -46,6 +47,7 @@ var allFields = []TopicField{
 	FieldSpeed,
 	FieldOutsideTemp,
 	FieldOdometer,
+	FieldActiveRoute,
 }
 
 // knownFields is a fast lookup set for filtering incoming messages.

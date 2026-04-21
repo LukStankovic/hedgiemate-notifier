@@ -1,6 +1,7 @@
 package state
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -10,6 +11,22 @@ import (
 	"github.com/hedgiemate/notifier/mqtt"
 	"github.com/hedgiemate/notifier/relay"
 )
+
+// activeRoutePayload matches the JSON from TeslaMate's "active_route" MQTT topic.
+type activeRoutePayload struct {
+	Destination         string               `json:"destination"`
+	EnergyAtArrival     int                  `json:"energy_at_arrival"`
+	MilesToArrival      float64              `json:"miles_to_arrival"`
+	MinutesToArrival    float64              `json:"minutes_to_arrival"`
+	TrafficMinutesDelay float64              `json:"traffic_minutes_delay"`
+	Location            *activeRouteLocation `json:"location"`
+	Error               *string              `json:"error"`
+}
+
+type activeRouteLocation struct {
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+}
 
 // CarState holds the current known state of a single car.
 type CarState struct {
@@ -31,6 +48,15 @@ type CarState struct {
 	Speed             int
 	OutsideTemp       float64
 	Odometer          float64
+
+	// Navigation / active route (from JSON "active_route" topic)
+	ActiveRouteDestination      string
+	ActiveRouteMilesToArrival   float64
+	ActiveRouteMinutesToArrival float64
+	ActiveRouteEnergyAtArrival  int
+	ActiveRouteTrafficDelay     float64
+	ActiveRouteLatitude         float64
+	ActiveRouteLongitude        float64
 
 	// Battery threshold tracking — fire once per session
 	batteryLowFired  bool
@@ -148,7 +174,7 @@ func (m *Manager) HandleMessage(carID string, field mqtt.TopicField, value strin
 	case mqtt.FieldUpdateAvailable:
 		prev := car.UpdateAvailable
 		car.UpdateAvailable = value
-		if !firstTime && prev == "" && value != "" {
+		if !firstTime && prev != "true" && value == "true" {
 			m.emit(carID, "software_update", car)
 		}
 
@@ -210,6 +236,7 @@ func (m *Manager) HandleMessage(carID string, field mqtt.TopicField, value strin
 		}
 	case mqtt.FieldUpdateVersion:
 		car.UpdateVersion = value
+		m.flushPendingIfEnriched(carID, car)
 	case mqtt.FieldSpeed:
 		s, err := strconv.Atoi(value)
 		if err == nil {
@@ -224,6 +251,32 @@ func (m *Manager) HandleMessage(carID string, field mqtt.TopicField, value strin
 		f, err := strconv.ParseFloat(value, 64)
 		if err == nil {
 			car.Odometer = f
+		}
+	case mqtt.FieldActiveRoute:
+		var route activeRoutePayload
+		if err := json.Unmarshal([]byte(value), &route); err != nil {
+			m.logger.Warn("invalid active_route JSON", "value", value, "error", err)
+			return
+		}
+		if route.Error != nil {
+			// No active route — clear navigation state
+			car.ActiveRouteDestination = ""
+			car.ActiveRouteMilesToArrival = 0
+			car.ActiveRouteMinutesToArrival = 0
+			car.ActiveRouteEnergyAtArrival = 0
+			car.ActiveRouteTrafficDelay = 0
+			car.ActiveRouteLatitude = 0
+			car.ActiveRouteLongitude = 0
+		} else {
+			car.ActiveRouteDestination = route.Destination
+			car.ActiveRouteMilesToArrival = route.MilesToArrival
+			car.ActiveRouteMinutesToArrival = route.MinutesToArrival
+			car.ActiveRouteEnergyAtArrival = route.EnergyAtArrival
+			car.ActiveRouteTrafficDelay = route.TrafficMinutesDelay
+			if route.Location != nil {
+				car.ActiveRouteLatitude = route.Location.Latitude
+				car.ActiveRouteLongitude = route.Location.Longitude
+			}
 		}
 	}
 }
@@ -392,6 +445,19 @@ func (m *Manager) isEnriched(car *CarState) bool {
 	return car.initialized[mqtt.FieldDisplayName] && car.initialized[mqtt.FieldBatteryLevel]
 }
 
+// isReadyFor checks whether all data needed to build a meaningful notification
+// for the given event is available. For most events baseline enrichment suffices;
+// software_update additionally needs the version string so the body isn't "true".
+func (m *Manager) isReadyFor(eventType string, car *CarState) bool {
+	if !m.isEnriched(car) {
+		return false
+	}
+	if eventType == "software_update" {
+		return car.UpdateVersion != ""
+	}
+	return true
+}
+
 func (m *Manager) fmtRange(km float64) string {
 	if m.distanceUnit == "mi" {
 		return fmt.Sprintf("%.0f mi", km*0.621371)
@@ -400,11 +466,12 @@ func (m *Manager) fmtRange(km float64) string {
 }
 
 func (m *Manager) emit(carID, eventType string, car *CarState) {
-	if eventType != "live_activity_update" && !m.isEnriched(car) {
-		m.logger.Warn("enrichment data not ready, deferring event",
+	if eventType != "live_activity_update" && !m.isReadyFor(eventType, car) {
+		m.logger.Warn("data not ready, deferring event",
 			"event", eventType, "car_id", carID,
 			"has_display_name", car.initialized[mqtt.FieldDisplayName],
-			"has_battery_level", car.initialized[mqtt.FieldBatteryLevel])
+			"has_battery_level", car.initialized[mqtt.FieldBatteryLevel],
+			"has_update_version", car.UpdateVersion != "")
 		car.pendingEvents = append(car.pendingEvents, eventType)
 		go m.deferredEmit(carID, eventType, 30*time.Second)
 		return
@@ -413,19 +480,30 @@ func (m *Manager) emit(carID, eventType string, car *CarState) {
 	m.emitter.Emit(payload)
 }
 
-// flushPendingIfEnriched emits all deferred events once enrichment data arrives.
-// Called from HandleMessage when display_name or battery_level is received.
+// flushPendingIfEnriched emits any deferred events whose required data has
+// now arrived. Events that are still not ready remain pending until either
+// their fields arrive or the 30s deferredEmit safety net fires.
+// Called from HandleMessage when display_name, battery_level, or update_version is received.
 func (m *Manager) flushPendingIfEnriched(carID string, car *CarState) {
-	if !m.isEnriched(car) || len(car.pendingEvents) == 0 {
+	if len(car.pendingEvents) == 0 {
 		return
 	}
-	m.logger.Info("enrichment data arrived, flushing pending events",
-		"car_id", carID, "events", car.pendingEvents)
+	var stillPending []string
+	var flushed []string
 	for _, eventType := range car.pendingEvents {
-		payload := m.buildPayload(carID, eventType, car)
-		m.emitter.Emit(payload)
+		if m.isReadyFor(eventType, car) {
+			payload := m.buildPayload(carID, eventType, car)
+			m.emitter.Emit(payload)
+			flushed = append(flushed, eventType)
+		} else {
+			stillPending = append(stillPending, eventType)
+		}
 	}
-	car.pendingEvents = nil
+	if len(flushed) > 0 {
+		m.logger.Info("data arrived, flushing pending events",
+			"car_id", carID, "flushed", flushed, "still_pending", stillPending)
+	}
+	car.pendingEvents = stillPending
 }
 
 // deferredEmit is a safety net: if enrichment data never arrives via MQTT retained
@@ -691,7 +769,7 @@ func (m *Manager) buildNotification(eventType, carName string, car *CarState) (t
 	case "battery_full":
 		titleKey = "notification.battery_full.title"
 		titleArgs = []string{carName}
-		fallbackTitle = carName + " — Fully charged"
+		fallbackTitle = carName + " — Battery level reached"
 		switch {
 		case hasGeo && hasEnergy && hasRange:
 			energy := fmt.Sprintf("%.1f", car.ChargeEnergyAdded)
@@ -841,24 +919,31 @@ func (m *Manager) buildPayload(carID, eventType string, car *CarState) relay.Eve
 		BodyLocArgs:  bodyArgs,
 		Timestamp:    time.Now().UTC(),
 		Data: relay.EventData{
-			BatteryLevel:      car.BatteryLevel,
-			ChargerPower:      car.ChargerPower,
-			ChargeEnergyAdded: car.ChargeEnergyAdded,
-			TimeToFullCharge:  car.TimeToFullCharge,
-			RatedRangeKm:      car.RatedRangeKm,
-			UsableBattery:     car.UsableBattery,
-			Geofence:          car.Geofence,
-			State:             car.State,
-			ChargingState:     car.ChargingState,
-			PluggedIn:         car.PluggedIn,
-			ChargeLimitSoc:    car.ChargeLimitSoc,
-			UpdateVersion:     car.UpdateVersion,
-			PreviousGeofence:  car.PreviousGeofence,
-			IsMetric:          m.distanceUnit == "km",
-			Speed:             car.Speed,
-			OutsideTemp:       car.OutsideTemp,
-			Distance:          distance,
-			Duration:          duration,
+			BatteryLevel:                 car.BatteryLevel,
+			ChargerPower:                 car.ChargerPower,
+			ChargeEnergyAdded:            car.ChargeEnergyAdded,
+			TimeToFullCharge:             car.TimeToFullCharge,
+			RatedRangeKm:                 car.RatedRangeKm,
+			UsableBattery:                car.UsableBattery,
+			Geofence:                     car.Geofence,
+			State:                        car.State,
+			ChargingState:                car.ChargingState,
+			PluggedIn:                    car.PluggedIn,
+			ChargeLimitSoc:               car.ChargeLimitSoc,
+			UpdateVersion:                car.UpdateVersion,
+			PreviousGeofence:             car.PreviousGeofence,
+			IsMetric:                     m.distanceUnit == "km",
+			Speed:                        car.Speed,
+			OutsideTemp:                  car.OutsideTemp,
+			Distance:                     distance,
+			Duration:                     duration,
+			ActiveRouteDestination:       car.ActiveRouteDestination,
+			ActiveRouteDistanceToArrival: car.ActiveRouteMilesToArrival, // TeslaMate sends km despite field name
+			ActiveRouteMinutesToArrival:  car.ActiveRouteMinutesToArrival,
+			ActiveRouteEnergyAtArrival:   car.ActiveRouteEnergyAtArrival,
+			ActiveRouteTrafficDelay:      car.ActiveRouteTrafficDelay,
+			// Location stored in CarState but not sent to relay (privacy)
+			// ActiveRouteLatitude / ActiveRouteLongitude ready when needed
 		},
 	}
 }
