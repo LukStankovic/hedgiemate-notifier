@@ -539,7 +539,7 @@ func (m *Manager) deferredEmit(carID, eventType string, delay time.Duration) {
 	m.emitter.Emit(payload)
 }
 
-func (m *Manager) buildNotification(eventType, carName string, car *CarState) (titleKey string, titleArgs []string, bodyKey string, bodyArgs []string, fallbackTitle string, fallbackBody string) {
+func (m *Manager) buildNotification(eventType, carName string, car *CarState) (titleKey string, titleArgs []string, bodyKey string, bodyArgs []string, bodyArgsTyped []relay.TypedArg, fallbackTitle string, fallbackBody string) {
 	bat := strconv.Itoa(car.BatteryLevel) + "%"
 	hasGeo := car.Geofence != ""
 	hasRange := car.RatedRangeKm > 0
@@ -551,6 +551,14 @@ func (m *Manager) buildNotification(eventType, carName string, car *CarState) (t
 		rangeStr = m.fmtRange(car.RatedRangeKm)
 	}
 
+	// rangeArg flags a body_loc_args index as a distance value so the relay
+	// can reformat it into the recipient's preferred unit (km vs mi). Without
+	// this, a miles user receives "210 km" verbatim because rangeStr is
+	// pre-formatted using DISTANCE_UNIT (defaults to km on the notifier).
+	rangeArg := func(idx int) []relay.TypedArg {
+		return []relay.TypedArg{{Index: idx, Type: "distance_km", Value: car.RatedRangeKm}}
+	}
+
 	switch eventType {
 	case "vehicle_falling_asleep":
 		titleKey = "notification.vehicle_falling_asleep.title"
@@ -560,6 +568,7 @@ func (m *Manager) buildNotification(eventType, carName string, car *CarState) (t
 		case hasGeo && hasRange:
 			bodyKey = "notification.vehicle_falling_asleep.body.full"
 			bodyArgs = []string{bat, car.Geofence, rangeStr}
+			bodyArgsTyped = rangeArg(2)
 			fallbackBody = fmt.Sprintf("%s · %s · %s", bat, car.Geofence, rangeStr)
 		case hasGeo:
 			bodyKey = "notification.vehicle_falling_asleep.body.geofence"
@@ -568,6 +577,7 @@ func (m *Manager) buildNotification(eventType, carName string, car *CarState) (t
 		case hasRange:
 			bodyKey = "notification.vehicle_falling_asleep.body.range"
 			bodyArgs = []string{bat, rangeStr}
+			bodyArgsTyped = rangeArg(1)
 			fallbackBody = fmt.Sprintf("%s · %s", bat, rangeStr)
 		default:
 			bodyKey = "notification.vehicle_falling_asleep.body"
@@ -583,6 +593,7 @@ func (m *Manager) buildNotification(eventType, carName string, car *CarState) (t
 		case hasGeo && hasRange:
 			bodyKey = "notification.vehicle_asleep.body.full"
 			bodyArgs = []string{bat, car.Geofence, rangeStr}
+			bodyArgsTyped = rangeArg(2)
 			fallbackBody = fmt.Sprintf("%s · %s · %s", bat, car.Geofence, rangeStr)
 		case hasGeo:
 			bodyKey = "notification.vehicle_asleep.body.geofence"
@@ -591,6 +602,7 @@ func (m *Manager) buildNotification(eventType, carName string, car *CarState) (t
 		case hasRange:
 			bodyKey = "notification.vehicle_asleep.body.range"
 			bodyArgs = []string{bat, rangeStr}
+			bodyArgsTyped = rangeArg(1)
 			fallbackBody = fmt.Sprintf("%s · %s", bat, rangeStr)
 		default:
 			bodyKey = "notification.vehicle_asleep.body"
@@ -606,6 +618,7 @@ func (m *Manager) buildNotification(eventType, carName string, car *CarState) (t
 		case hasGeo && hasRange:
 			bodyKey = "notification.vehicle_woke.body.full"
 			bodyArgs = []string{bat, car.Geofence, rangeStr}
+			bodyArgsTyped = rangeArg(2)
 			fallbackBody = fmt.Sprintf("%s · %s · %s", bat, car.Geofence, rangeStr)
 		case hasGeo:
 			bodyKey = "notification.vehicle_woke.body.geofence"
@@ -614,6 +627,7 @@ func (m *Manager) buildNotification(eventType, carName string, car *CarState) (t
 		case hasRange:
 			bodyKey = "notification.vehicle_woke.body.range"
 			bodyArgs = []string{bat, rangeStr}
+			bodyArgsTyped = rangeArg(1)
 			fallbackBody = fmt.Sprintf("%s · %s", bat, rangeStr)
 		default:
 			bodyKey = "notification.vehicle_woke.body"
@@ -629,6 +643,7 @@ func (m *Manager) buildNotification(eventType, carName string, car *CarState) (t
 		case hasGeo && hasRange:
 			bodyKey = "notification.drive_started.body.full"
 			bodyArgs = []string{car.Geofence, bat, rangeStr}
+			bodyArgsTyped = rangeArg(2)
 			fallbackBody = fmt.Sprintf("From %s · %s · %s", car.Geofence, bat, rangeStr)
 		case hasGeo:
 			bodyKey = "notification.drive_started.body.geofence"
@@ -637,6 +652,7 @@ func (m *Manager) buildNotification(eventType, carName string, car *CarState) (t
 		case hasRange:
 			bodyKey = "notification.drive_started.body.range"
 			bodyArgs = []string{bat, rangeStr}
+			bodyArgsTyped = rangeArg(1)
 			fallbackBody = fmt.Sprintf("%s · %s", bat, rangeStr)
 		default:
 			bodyKey = "notification.drive_started.body"
@@ -652,6 +668,7 @@ func (m *Manager) buildNotification(eventType, carName string, car *CarState) (t
 		case hasGeo && hasRange:
 			bodyKey = "notification.drive_ended.body.full"
 			bodyArgs = []string{car.Geofence, bat, rangeStr}
+			bodyArgsTyped = rangeArg(2)
 			fallbackBody = fmt.Sprintf("At %s · %s · %s", car.Geofence, bat, rangeStr)
 		case hasGeo:
 			bodyKey = "notification.drive_ended.body.geofence"
@@ -660,6 +677,7 @@ func (m *Manager) buildNotification(eventType, carName string, car *CarState) (t
 		case hasRange:
 			bodyKey = "notification.drive_ended.body.range"
 			bodyArgs = []string{bat, rangeStr}
+			bodyArgsTyped = rangeArg(1)
 			fallbackBody = fmt.Sprintf("%s · %s", bat, rangeStr)
 		default:
 			bodyKey = "notification.drive_ended.body"
@@ -702,6 +720,7 @@ func (m *Manager) buildNotification(eventType, carName string, car *CarState) (t
 			energy := fmt.Sprintf("%.1f", car.ChargeEnergyAdded)
 			bodyKey = "notification.charging_completed.body.full"
 			bodyArgs = []string{car.Geofence, bat, energy, rangeStr}
+			bodyArgsTyped = rangeArg(3)
 			fallbackBody = fmt.Sprintf("%s · %s · %s kWh · %s", car.Geofence, bat, energy, rangeStr)
 		case hasEnergy:
 			energy := fmt.Sprintf("%.1f", car.ChargeEnergyAdded)
@@ -727,6 +746,7 @@ func (m *Manager) buildNotification(eventType, carName string, car *CarState) (t
 			energy := fmt.Sprintf("%.1f", car.ChargeEnergyAdded)
 			bodyKey = "notification.charging_interrupted.body.full"
 			bodyArgs = []string{car.Geofence, bat, energy, rangeStr}
+			bodyArgsTyped = rangeArg(3)
 			fallbackBody = fmt.Sprintf("%s · %s · %s kWh · %s", car.Geofence, bat, energy, rangeStr)
 		case hasEnergy:
 			energy := fmt.Sprintf("%.1f", car.ChargeEnergyAdded)
@@ -751,10 +771,12 @@ func (m *Manager) buildNotification(eventType, carName string, car *CarState) (t
 		case hasGeo && hasRange:
 			bodyKey = "notification.battery_low.body.full"
 			bodyArgs = []string{car.Geofence, bat, rangeStr}
+			bodyArgsTyped = rangeArg(2)
 			fallbackBody = fmt.Sprintf("%s · %s · %s", car.Geofence, bat, rangeStr)
 		case hasRange:
 			bodyKey = "notification.battery_low.body.range"
 			bodyArgs = []string{bat, rangeStr}
+			bodyArgsTyped = rangeArg(1)
 			fallbackBody = fmt.Sprintf("%s · %s", bat, rangeStr)
 		case hasGeo:
 			bodyKey = "notification.battery_low.body.geofence"
@@ -775,6 +797,7 @@ func (m *Manager) buildNotification(eventType, carName string, car *CarState) (t
 			energy := fmt.Sprintf("%.1f", car.ChargeEnergyAdded)
 			bodyKey = "notification.battery_full.body.full"
 			bodyArgs = []string{car.Geofence, bat, energy, rangeStr}
+			bodyArgsTyped = rangeArg(3)
 			fallbackBody = fmt.Sprintf("%s · %s · %s kWh · %s", car.Geofence, bat, energy, rangeStr)
 		case hasEnergy:
 			energy := fmt.Sprintf("%.1f", car.ChargeEnergyAdded)
@@ -825,6 +848,7 @@ func (m *Manager) buildNotification(eventType, carName string, car *CarState) (t
 			energy := fmt.Sprintf("%.1f", car.ChargeEnergyAdded)
 			bodyKey = "notification.charger_disconnected.body.full"
 			bodyArgs = []string{car.Geofence, bat, energy, rangeStr}
+			bodyArgsTyped = rangeArg(3)
 			fallbackBody = fmt.Sprintf("%s · %s · %s kWh · %s", car.Geofence, bat, energy, rangeStr)
 		case hasEnergy:
 			energy := fmt.Sprintf("%.1f", car.ChargeEnergyAdded)
@@ -860,6 +884,7 @@ func (m *Manager) buildNotification(eventType, carName string, car *CarState) (t
 		if hasRange {
 			bodyKey = "notification.geofence_entered.body.range"
 			bodyArgs = []string{bat, rangeStr}
+			bodyArgsTyped = rangeArg(1)
 			fallbackBody = fmt.Sprintf("%s · %s", bat, rangeStr)
 		} else {
 			bodyKey = "notification.geofence_entered.body"
@@ -878,6 +903,7 @@ func (m *Manager) buildNotification(eventType, carName string, car *CarState) (t
 		if hasRange {
 			bodyKey = "notification.geofence_exited.body.range"
 			bodyArgs = []string{bat, rangeStr}
+			bodyArgsTyped = rangeArg(1)
 			fallbackBody = fmt.Sprintf("%s · %s", bat, rangeStr)
 		} else {
 			bodyKey = "notification.geofence_exited.body"
@@ -895,7 +921,7 @@ func (m *Manager) buildPayload(carID, eventType string, car *CarState) relay.Eve
 		carName = "Car " + carID
 	}
 
-	titleKey, titleArgs, bodyKey, bodyArgs, fallbackTitle, fallbackBody := m.buildNotification(eventType, carName, car)
+	titleKey, titleArgs, bodyKey, bodyArgs, bodyArgsTyped, fallbackTitle, fallbackBody := m.buildNotification(eventType, carName, car)
 
 	// Calculate driving distance and duration
 	var distance float64
@@ -908,16 +934,17 @@ func (m *Manager) buildPayload(carID, eventType string, car *CarState) relay.Eve
 	}
 
 	return relay.EventPayload{
-		EventType:    eventType,
-		CarID:        carID,
-		CarName:      carName,
-		Title:        fallbackTitle,
-		Body:         fallbackBody,
-		TitleLocKey:  titleKey,
-		TitleLocArgs: titleArgs,
-		BodyLocKey:   bodyKey,
-		BodyLocArgs:  bodyArgs,
-		Timestamp:    time.Now().UTC(),
+		EventType:     eventType,
+		CarID:         carID,
+		CarName:       carName,
+		Title:         fallbackTitle,
+		Body:          fallbackBody,
+		TitleLocKey:   titleKey,
+		TitleLocArgs:  titleArgs,
+		BodyLocKey:    bodyKey,
+		BodyLocArgs:   bodyArgs,
+		BodyArgsTyped: bodyArgsTyped,
+		Timestamp:     time.Now().UTC(),
 		Data: relay.EventData{
 			BatteryLevel:                 car.BatteryLevel,
 			ChargerPower:                 car.ChargerPower,

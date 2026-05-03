@@ -23,7 +23,7 @@ Add the notifier to your existing TeslaMate `docker-compose.yml`:
 ```yaml
 services:
   hedgiemate-notifier:
-    image: ghcr.io/hedgiemate/notifier:latest
+    image: hedgiemate/notifier:latest
     restart: unless-stopped
     depends_on:
       - mosquitto
@@ -51,7 +51,7 @@ docker run -d \
   -e MQTT_HOST="your-mqtt-host" \
   -e MQTT_PORT="1883" \
   -e CAR_IDS="1" \
-  ghcr.io/hedgiemate/notifier:latest
+  hedgiemate/notifier:latest
 ```
 
 ### Build from Source
@@ -74,7 +74,7 @@ All configuration is via environment variables:
 | `MQTT_PASSWORD` | No | - | MQTT authentication password |
 | `MQTT_CLIENT_ID` | No | `hedgiemate-notifier` | MQTT client ID |
 | `CAR_IDS` | No | `1` | Comma-separated car IDs to monitor |
-| `RELAY_URL` | No | `https://relay.hedgiemate.com` | Relay server URL |
+| `RELAY_URL` | No | `https://push.hedgiemate.com` | Relay server URL |
 | `BATTERY_LOW_THRESHOLD` | No | `20` | Battery low notification threshold (%) |
 | `BATTERY_HIGH_THRESHOLD` | No | `90` | Battery full notification threshold (%) |
 | `LOG_LEVEL` | No | `info` | Log level: `debug`, `info`, `warn`, `error` |
