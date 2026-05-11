@@ -3,9 +3,15 @@ package relay
 import "time"
 
 type EventPayload struct {
-	EventType     string     `json:"event_type"`
-	CarID         string     `json:"car_id"`
-	CarName       string     `json:"car_name"`
+	EventType string `json:"event_type"`
+	CarID     string `json:"car_id"`
+	CarName   string `json:"car_name"`
+	// ServerID is the UUID of the iOS app's ServerConnection that owns this
+	// TeslaMate instance. Set via the optional SERVER_ID env var so the
+	// relay can route notifications to the right (server, car) on devices
+	// configured for multi-server. Omitted when unset — single-server
+	// installs and pre-multi-server iOS builds keep working unchanged.
+	ServerID      string     `json:"server_id,omitempty"`
 	Title         string     `json:"title"`
 	Body          string     `json:"body"`
 	TitleLocKey   string     `json:"title_loc_key,omitempty"`

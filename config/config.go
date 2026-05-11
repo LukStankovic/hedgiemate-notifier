@@ -22,6 +22,11 @@ type Config struct {
 	BatteryHighThresh int
 	LogLevel          string
 	DistanceUnit      string
+	// ServerID is the UUID of the corresponding ServerConnection inside the
+	// iOS app. Optional. When set, every outgoing event is tagged with it
+	// so multi-server users see notifications open on the right (server,
+	// car) on iOS. Single-server installs can leave this unset.
+	ServerID string
 }
 
 func Load() (*Config, error) {
@@ -74,6 +79,8 @@ func Load() (*Config, error) {
 		distanceUnit = "km"
 	}
 
+	serverID := strings.TrimSpace(os.Getenv("SERVER_ID"))
+
 	return &Config{
 		UserToken:         userToken,
 		MQTTHost:          mqttHost,
@@ -89,6 +96,7 @@ func Load() (*Config, error) {
 		BatteryHighThresh: batteryHigh,
 		LogLevel:          logLevel,
 		DistanceUnit:      distanceUnit,
+		ServerID:          serverID,
 	}, nil
 }
 

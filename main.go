@@ -48,7 +48,7 @@ func main() {
 	emitter := state.NewEventEmitter(relayClient, logger)
 
 	// Initialize state manager
-	stateMgr := state.NewManager(emitter, cfg.BatteryLowThresh, cfg.BatteryHighThresh, cfg.DistanceUnit, logger)
+	stateMgr := state.NewManager(emitter, cfg.BatteryLowThresh, cfg.BatteryHighThresh, cfg.DistanceUnit, cfg.ServerID, logger)
 
 	// Initialize MQTT client
 	mqttClient := mqtt.NewClient(

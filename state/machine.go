@@ -87,11 +87,15 @@ type Manager struct {
 	batteryLowPct  int
 	batteryHighPct int
 	distanceUnit   string
-	logger         *slog.Logger
-	cache          *nameCache
+	// serverID tags every outgoing EventPayload so multi-server iOS users
+	// see notifications open on the right (server, car). Empty by default
+	// (single-server installs leave it unset).
+	serverID string
+	logger   *slog.Logger
+	cache    *nameCache
 }
 
-func NewManager(emitter *EventEmitter, batteryLow, batteryHigh int, distanceUnit string, logger *slog.Logger) *Manager {
+func NewManager(emitter *EventEmitter, batteryLow, batteryHigh int, distanceUnit, serverID string, logger *slog.Logger) *Manager {
 	cache := newNameCache()
 	mgr := &Manager{
 		cars:           make(map[string]*CarState),
@@ -99,6 +103,7 @@ func NewManager(emitter *EventEmitter, batteryLow, batteryHigh int, distanceUnit
 		batteryLowPct:  batteryLow,
 		batteryHighPct: batteryHigh,
 		distanceUnit:   distanceUnit,
+		serverID:       serverID,
 		logger:         logger,
 		cache:          cache,
 	}
@@ -937,6 +942,7 @@ func (m *Manager) buildPayload(carID, eventType string, car *CarState) relay.Eve
 		EventType:     eventType,
 		CarID:         carID,
 		CarName:       carName,
+		ServerID:      m.serverID,
 		Title:         fallbackTitle,
 		Body:          fallbackBody,
 		TitleLocKey:   titleKey,
