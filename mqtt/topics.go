@@ -21,6 +21,7 @@ const (
 	FieldRatedRangeKm      TopicField = "rated_battery_range_km"
 	FieldUsableBattery     TopicField = "usable_battery_level"
 	FieldDisplayName       TopicField = "display_name"
+	FieldModel             TopicField = "model"
 	FieldChargeLimitSoc    TopicField = "charge_limit_soc"
 	FieldUpdateVersion     TopicField = "update_version"
 	FieldSpeed             TopicField = "speed"
@@ -42,6 +43,7 @@ var allFields = []TopicField{
 	FieldRatedRangeKm,
 	FieldUsableBattery,
 	FieldDisplayName,
+	FieldModel,
 	FieldChargeLimitSoc,
 	FieldUpdateVersion,
 	FieldSpeed,

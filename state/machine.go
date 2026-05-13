@@ -42,6 +42,7 @@ type CarState struct {
 	RatedRangeKm      float64
 	UsableBattery     int
 	DisplayName       string
+	Model             string
 	ChargeLimitSoc    int
 	UpdateVersion     string
 	PreviousGeofence  string // previous geofence name before update
@@ -233,6 +234,12 @@ func (m *Manager) HandleMessage(carID string, field mqtt.TopicField, value strin
 		names := m.cache.Load()
 		names[carID] = value
 		m.cache.Save(names)
+		m.flushPendingIfEnriched(carID, car)
+	case mqtt.FieldModel:
+		if firstTime {
+			m.logger.Info("received model", "car_id", carID, "value", value)
+		}
+		car.Model = value
 		m.flushPendingIfEnriched(carID, car)
 	case mqtt.FieldChargeLimitSoc:
 		level, err := strconv.Atoi(value)
@@ -920,11 +927,28 @@ func (m *Manager) buildNotification(eventType, carName string, car *CarState) (t
 	return
 }
 
-func (m *Manager) buildPayload(carID, eventType string, car *CarState) relay.EventPayload {
-	carName := car.DisplayName
-	if carName == "" {
-		carName = "Car " + carID
+// displayNameForCar returns the user-set car name, falling back to the model
+// (e.g. "Model Y") when set. Mirrors iOS `Car.displayName` so notifications
+// and the iOS dashboard read consistently when the user hasn't named the car.
+// Older TeslaMate instances that don't publish the `model` topic keep the
+// legacy "Car {id}" fallback — non-breaking change.
+func displayNameForCar(carID string, car *CarState) string {
+	if car.DisplayName != "" {
+		return car.DisplayName
 	}
+	if car.Model != "" {
+		switch car.Model {
+		case "S", "3", "X", "Y":
+			return "Model " + car.Model
+		default:
+			return car.Model
+		}
+	}
+	return "Car " + carID
+}
+
+func (m *Manager) buildPayload(carID, eventType string, car *CarState) relay.EventPayload {
+	carName := displayNameForCar(carID, car)
 
 	titleKey, titleArgs, bodyKey, bodyArgs, bodyArgsTyped, fallbackTitle, fallbackBody := m.buildNotification(eventType, carName, car)
 
