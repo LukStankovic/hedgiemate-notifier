@@ -453,8 +453,16 @@ func (m *Manager) stopDrivingLiveActivity(car *CarState) {
 	car.driveStartOdometer = 0
 }
 
+// isEnriched reports whether we have enough state to build a meaningful
+// notification body without hitting the 30s deferredEmit safety net. Either
+// display_name or model is enough on the naming side — displayNameForCar
+// falls back to "Model Y" when display_name is missing, and TeslaMate omits
+// the display_name topic entirely when the car has no user-set name, so
+// requiring display_name would force every event for unnamed cars through
+// the 30s wait.
 func (m *Manager) isEnriched(car *CarState) bool {
-	return car.initialized[mqtt.FieldDisplayName] && car.initialized[mqtt.FieldBatteryLevel]
+	hasName := car.initialized[mqtt.FieldDisplayName] || car.initialized[mqtt.FieldModel]
+	return hasName && car.initialized[mqtt.FieldBatteryLevel]
 }
 
 // isReadyFor checks whether all data needed to build a meaningful notification
