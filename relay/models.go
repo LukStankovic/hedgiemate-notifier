@@ -11,7 +11,14 @@ type EventPayload struct {
 	// relay can route notifications to the right (server, car) on devices
 	// configured for multi-server. Omitted when unset — single-server
 	// installs and pre-multi-server iOS builds keep working unchanged.
-	ServerID      string     `json:"server_id,omitempty"`
+	ServerID string `json:"server_id,omitempty"`
+	// EventID is the idempotency key for exactly-once ingestion: a UUID
+	// minted once per logical event by SendEvent BEFORE its HTTP retry
+	// loop, so a retry after a lost response carries the same id and the
+	// relay drops the replay with zero side effects (the 2026-06-11
+	// twin-Live-Activity incident was a retried drive_started). Older
+	// relays ignore the unknown field.
+	EventID       string     `json:"event_id,omitempty"`
 	Title         string     `json:"title"`
 	Body          string     `json:"body"`
 	TitleLocKey   string     `json:"title_loc_key,omitempty"`

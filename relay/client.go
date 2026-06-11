@@ -3,6 +3,7 @@ package relay
 import (
 	"bytes"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -33,6 +34,15 @@ func NewClient(relayURL, userToken string, logger *slog.Logger) *Client {
 }
 
 func (c *Client) SendEvent(payload EventPayload) error {
+	// Idempotency key: minted ONCE per logical event, before the retry loop
+	// below, so every retry of this event carries the same event_id and the
+	// relay can drop replays with zero side effects. Without it, a response
+	// lost after the relay had already processed the POST made the retry a
+	// second drive_started — which respawned the Live Activity and put twin
+	// LAs on the lock screen (2026-06-11 incident).
+	if payload.EventID == "" {
+		payload.EventID = newEventID()
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal payload: %w", err)
@@ -91,6 +101,20 @@ func (c *Client) SendEvent(payload EventPayload) error {
 	}
 
 	return fmt.Errorf("all retries exhausted: %w", lastErr)
+}
+
+// newEventID returns a random RFC 4122 v4 UUID. crypto/rand cannot fail on
+// supported platforms; on the theoretical error path we fall back to a
+// timestamp id instead of aborting the send — a missing/weak event_id only
+// downgrades dedup to the relay's 15s heuristic, it never loses the event.
+func newEventID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("t-%d", time.Now().UnixNano())
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
 func (c *Client) sign(body []byte, timestamp string) string {
