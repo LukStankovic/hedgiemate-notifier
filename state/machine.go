@@ -932,6 +932,24 @@ func (m *Manager) buildNotification(eventType, carName string, car *CarState) (t
 		}
 	}
 
+	// Tag the current-battery arg so the relay can decide the displayed SoC
+	// from VALUES (usable vs rated vs charge limit, per-recipient) instead of
+	// string-matching the pre-formatted text. Done once here, after the
+	// switch, so no body template can be missed. The first arg equal to `bat`
+	// is always the current battery: every template above places it before
+	// the only other "<N>%" entry (the charge limit). Old relays ignore the
+	// unknown type and keep the pre-formatted string — additive change.
+	for i, a := range bodyArgs {
+		if a == bat {
+			bodyArgsTyped = append(bodyArgsTyped, relay.TypedArg{
+				Index: i,
+				Type:  "battery_percent",
+				Value: float64(car.BatteryLevel),
+			})
+			break
+		}
+	}
+
 	return
 }
 
