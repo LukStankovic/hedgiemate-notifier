@@ -18,14 +18,16 @@ import (
 type Client struct {
 	relayURL  string
 	userToken string
+	version   string
 	http      *http.Client
 	logger    *slog.Logger
 }
 
-func NewClient(relayURL, userToken string, logger *slog.Logger) *Client {
+func NewClient(relayURL, userToken, version string, logger *slog.Logger) *Client {
 	return &Client{
 		relayURL:  relayURL,
 		userToken: userToken,
+		version:   version,
 		http: &http.Client{
 			Timeout: 10 * time.Second,
 		},
@@ -74,6 +76,9 @@ func (c *Client) SendEvent(payload EventPayload) error {
 		req.Header.Set("X-HedgieMate-Signature", signature)
 		req.Header.Set("X-HedgieMate-Timestamp", timestamp)
 		req.Header.Set("X-HedgieMate-User-Token", c.userToken)
+		// Reported so the relay can flag outdated notifiers (in-app banner only).
+		// Harmless to older relays — an unknown header is ignored.
+		req.Header.Set("X-HedgieMate-Notifier-Version", c.version)
 
 		resp, err := c.http.Do(req)
 		if err != nil {

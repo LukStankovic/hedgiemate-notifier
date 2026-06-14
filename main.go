@@ -14,6 +14,13 @@ import (
 	"github.com/hedgiemate/notifier/state"
 )
 
+// version is the notifier's build version, injected at build time via
+// -ldflags "-X main.version=<tag>". Reported to the relay so it can tell users
+// running an outdated notifier (in-app banner; never a push). Defaults to "dev"
+// for un-stamped builds — the relay treats unknown/"dev" as "not outdated", so
+// an un-versioned build never triggers a false nag.
+var version = "dev"
+
 func main() {
 	// Load configuration
 	cfg, err := config.Load()
@@ -30,6 +37,7 @@ func main() {
 	slog.SetDefault(logger)
 
 	logger.Info("hedgiemate-notifier starting",
+		"version", version,
 		"car_ids", cfg.CarIDs,
 		"mqtt_host", cfg.MQTTHost,
 		"mqtt_port", cfg.MQTTPort,
@@ -42,7 +50,7 @@ func main() {
 	)
 
 	// Initialize relay client
-	relayClient := relay.NewClient(cfg.RelayURL, cfg.UserToken, logger)
+	relayClient := relay.NewClient(cfg.RelayURL, cfg.UserToken, version, logger)
 
 	// Initialize event emitter with debounce
 	emitter := state.NewEventEmitter(relayClient, logger)

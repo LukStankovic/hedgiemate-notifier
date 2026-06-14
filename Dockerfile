@@ -3,7 +3,10 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /notifier .
+# VERSION is injected into main.version so the running notifier reports its
+# build to the relay. Pass at build: --build-arg VERSION=$(git describe --tags --always)
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${VERSION}" -o /notifier .
 
 FROM alpine:3.23
 RUN apk --no-cache add ca-certificates && \

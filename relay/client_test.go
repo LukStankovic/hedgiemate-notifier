@@ -39,7 +39,7 @@ func TestSendEventIdempotencyKey(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewClient(srv.URL, "hm_test", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	client := NewClient(srv.URL, "hm_test", "test", slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	if err := client.SendEvent(EventPayload{EventType: "drive_started", CarID: "1"}); err != nil {
 		t.Fatalf("send event: %v", err)
