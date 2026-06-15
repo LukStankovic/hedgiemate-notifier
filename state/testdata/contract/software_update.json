@@ -1,0 +1,33 @@
+{
+  "event_type": "software_update",
+  "car_id": "1",
+  "car_name": "Car 1",
+  "title": "Car 1 — Update available",
+  "body": "2026.20.1",
+  "title_loc_key": "notification.software_update.title",
+  "title_loc_args": [
+    "Car 1"
+  ],
+  "body_loc_key": "notification.software_update.body",
+  "body_loc_args": [
+    "2026.20.1"
+  ],
+  "timestamp": "0001-01-01T00:00:00Z",
+  "data": {
+    "battery_level": 79,
+    "charger_power": 11,
+    "charge_energy_added": 53,
+    "time_to_full_charge": 0,
+    "rated_range_km": 446.24,
+    "usable_battery_level": 79,
+    "geofence": "Doma",
+    "state": "online",
+    "charging_state": "Complete",
+    "plugged_in": true,
+    "charge_limit_soc": 80,
+    "update_version": "2026.20.1",
+    "previous_geofence": "Doma",
+    "is_metric": true,
+    "outside_temp": 19.5
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "event_type": "charger_disconnected",
+  "car_id": "1",
+  "car_name": "Car 1",
+  "title": "Car 1 unplugged",
+  "body": "Doma · 79% · 53.0 kWh · 446 km",
+  "title_loc_key": "notification.charger_disconnected.title",
+  "title_loc_args": [
+    "Car 1"
+  ],
+  "body_loc_key": "notification.charger_disconnected.body.full",
+  "body_loc_args": [
+    "Doma",
+    "79%",
+    "53.0",
+    "446 km"
+  ],
+  "body_args_typed": [
+    {
+      "index": 3,
+      "type": "distance_km",
+      "value": 446.24
+    },
+    {
+      "index": 1,
+      "type": "battery_percent",
+      "value": 79
+    }
+  ],
+  "timestamp": "0001-01-01T00:00:00Z",
+  "data": {
+    "battery_level": 79,
+    "charger_power": 11,
+    "charge_energy_added": 53,
+    "time_to_full_charge": 0,
+    "rated_range_km": 446.24,
+    "usable_battery_level": 79,
+    "geofence": "Doma",
+    "state": "online",
+    "charging_state": "Complete",
+    "plugged_in": true,
+    "charge_limit_soc": 80,
+    "update_version": "2026.20.1",
+    "previous_geofence": "Doma",
+    "is_metric": true,
+    "outside_temp": 19.5
+  }
+}
