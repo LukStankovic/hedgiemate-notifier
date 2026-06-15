@@ -145,11 +145,9 @@ func (m *Manager) HandleMessage(carID string, field mqtt.TopicField, value strin
 		if !firstTime && prev != value {
 			m.handleChargingStateTransition(carID, car, prev, value)
 		}
-		// Reset battery threshold flags when charging state changes
-		if prev != value {
-			car.batteryLowFired = false
-			car.batteryHighFired = false
-		}
+		// Battery threshold latches re-arm by level in checkBatteryThresholds,
+		// not here. Resetting them on every charging_state change re-fired
+		// battery_low/full on top-off cycles.
 
 	case mqtt.FieldBatteryLevel:
 		level, err := strconv.Atoi(value)
@@ -328,15 +326,44 @@ func (m *Manager) handleChargingStateTransition(carID string, car *CarState, pre
 	}
 }
 
+// batteryThresholdReArmMargin is how far the level must move back past a
+// threshold before the alert can fire again — a deadband so jitter near the
+// threshold (regen nudging SoC 20↔21%) doesn't re-fire.
+const batteryThresholdReArmMargin = 3
+
 func (m *Manager) checkBatteryThresholds(carID string, car *CarState) {
-	if car.BatteryLevel <= m.batteryLowPct && !car.batteryLowFired {
-		car.batteryLowFired = true
-		m.emit(carID, "battery_low", car)
+	for _, eventType := range m.batteryThresholdEvents(car) {
+		m.emit(carID, eventType, car)
 	}
-	if car.BatteryLevel >= m.batteryHighPct && !car.batteryHighFired {
-		car.batteryHighFired = true
-		m.emit(carID, "battery_full", car)
+}
+
+// batteryThresholdEvents returns the battery alerts to fire for the current
+// level and updates the re-arm latches. An alert fires once at its threshold
+// and re-arms only after the level recovers past it by the deadband, so a
+// genuine recharge re-alerts but jitter and charging_state flaps don't. Pure,
+// so it can be unit-tested by replaying level sequences.
+func (m *Manager) batteryThresholdEvents(car *CarState) []string {
+	var events []string
+
+	if car.BatteryLevel <= m.batteryLowPct {
+		if !car.batteryLowFired {
+			car.batteryLowFired = true
+			events = append(events, "battery_low")
+		}
+	} else if car.BatteryLevel >= m.batteryLowPct+batteryThresholdReArmMargin {
+		car.batteryLowFired = false
 	}
+
+	if car.BatteryLevel >= m.batteryHighPct {
+		if !car.batteryHighFired {
+			car.batteryHighFired = true
+			events = append(events, "battery_full")
+		}
+	} else if car.BatteryLevel <= m.batteryHighPct-batteryThresholdReArmMargin {
+		car.batteryHighFired = false
+	}
+
+	return events
 }
 
 func (m *Manager) startLiveActivity(carID string, car *CarState) {
