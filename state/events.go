@@ -13,15 +13,15 @@ import (
 // resets on each repeat, so it absorbs an oscillation of any total length as
 // long as consecutive same-type edges arrive within this window.
 //
-// Lowered 5s→3s (2026-06): every state-transition push paid the full window as
-// latency, and production data (7d/22 users) showed the flaps it guards are
-// rare (~1/user/6d), confined to old notifiers without event_id, and ALL
-// same-type — which the relay's independent 15s session-aware dedup catches
-// regardless of this window. The dangerous start→end→start session-boundary
-// oscillation (which the relay dedup would pass as a new session) was not
-// observed at all. 3s keeps margin for genuine sub-3s thrashing while cutting
-// 2s off every transition notification.
-const debounceDuration = 3 * time.Second
+// Lowered to 1s (2026-06). It's no longer the primary flap guard: the relay's
+// 15s session-aware dedup catches same-type duplicates regardless of this
+// window (production data — every observed flap was already caught there). The
+// 1s window stays only as a cheap source-side throttle so a thrashing/
+// reconnecting box doesn't fire a burst of identical events at the relay; it's
+// not set higher because that just adds latency to every transition push for
+// flaps the relay already handles. Not 0 so a misbehaving box still can't
+// hammer the relay unthrottled.
+const debounceDuration = 1 * time.Second
 
 // EventEmitter handles debouncing and dispatching events to the relay.
 type EventEmitter struct {
