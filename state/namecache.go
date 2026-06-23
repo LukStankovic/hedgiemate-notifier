@@ -47,11 +47,19 @@ func (c *nameCache) Load() map[string]CachedCar {
 	return cars
 }
 
-// Save persists the car ID → naming state mapping to disk.
+// Save persists the car ID → naming state mapping to disk atomically: it
+// writes a temp file in the same directory and renames it over the target, so a
+// crash mid-write can never leave a truncated/corrupt JSON behind.
 func (c *nameCache) Save(cars map[string]CachedCar) {
 	data, err := json.Marshal(cars)
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(c.path, data, 0644)
+	tmp := c.path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return
+	}
+	if err := os.Rename(tmp, c.path); err != nil {
+		_ = os.Remove(tmp)
+	}
 }
