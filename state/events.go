@@ -8,19 +8,9 @@ import (
 	"github.com/hedgiemate/notifier/relay"
 )
 
-// debounceDuration coalesces rapid repeats of the SAME (carID, eventType)
-// before sending — anti-flap for MQTT/TeslaMate state thrashing. The timer
-// resets on each repeat, so it absorbs an oscillation of any total length as
-// long as consecutive same-type edges arrive within this window.
-//
-// Lowered to 1s (2026-06). It's no longer the primary flap guard: the relay's
-// 15s session-aware dedup catches same-type duplicates regardless of this
-// window (production data — every observed flap was already caught there). The
-// 1s window stays only as a cheap source-side throttle so a thrashing/
-// reconnecting box doesn't fire a burst of identical events at the relay; it's
-// not set higher because that just adds latency to every transition push for
-// flaps the relay already handles. Not 0 so a misbehaving box still can't
-// hammer the relay unthrottled.
+// debounceDuration coalesces rapid same-(carID, eventType) repeats; the timer
+// resets on each one. Kept short — the relay's 15s dedup is the real flap
+// guard — but non-zero so a thrashing box can't burst the relay.
 const debounceDuration = 1 * time.Second
 
 // EventEmitter handles debouncing and dispatching events to the relay.

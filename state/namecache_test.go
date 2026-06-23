@@ -6,14 +6,21 @@ import (
 	"testing"
 )
 
-// TestNameCacheRoundTrip locks the fix for the user-81 "Car 1" regression: the
-// model must persist across restarts, not just the display_name.
+func carStore(path string) *jsonStore[map[string]CachedCar] {
+	return &jsonStore[map[string]CachedCar]{
+		path:  path,
+		empty: func() map[string]CachedCar { return map[string]CachedCar{} },
+	}
+}
+
+// TestNameCacheRoundTrip locks the user-81 "Car 1" fix: model must persist, not
+// just display_name. Multi-car: each carID independent.
 func TestNameCacheRoundTrip(t *testing.T) {
-	c := &nameCache{path: filepath.Join(t.TempDir(), cacheFileName)}
+	c := carStore(filepath.Join(t.TempDir(), "car_names.json"))
 
 	c.Save(map[string]CachedCar{
-		"1": {Model: "Y"},               // unnamed car — model only
-		"2": {DisplayName: "Daily"},     // user-named
+		"1": {Model: "Y"},
+		"2": {DisplayName: "Daily"},
 		"3": {DisplayName: "X", Model: "X"},
 	})
 
@@ -29,15 +36,14 @@ func TestNameCacheRoundTrip(t *testing.T) {
 	}
 }
 
-// TestNameCacheLegacyFormat ensures the old map[string]string file degrades
-// gracefully (empty map) instead of erroring — it's rebuilt from live MQTT.
+// TestNameCacheLegacyFormat: the old map[string]string file degrades to an
+// empty map instead of erroring — rebuilt from live MQTT.
 func TestNameCacheLegacyFormat(t *testing.T) {
-	path := filepath.Join(t.TempDir(), cacheFileName)
+	path := filepath.Join(t.TempDir(), "car_names.json")
 	if err := os.WriteFile(path, []byte(`{"1":"Daily"}`), 0644); err != nil {
 		t.Fatalf("write legacy: %v", err)
 	}
-	c := &nameCache{path: path}
-	if got := c.Load(); len(got) != 0 {
+	if got := carStore(path).Load(); len(got) != 0 {
 		t.Errorf("legacy load = %+v, want empty map", got)
 	}
 }

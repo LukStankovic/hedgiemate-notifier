@@ -93,11 +93,11 @@ type Manager struct {
 	// (single-server installs leave it unset).
 	serverID string
 	logger   *slog.Logger
-	cache    *nameCache
+	cache    *jsonStore[map[string]CachedCar]
 }
 
 func NewManager(emitter *EventEmitter, batteryLow, batteryHigh int, distanceUnit, serverID string, logger *slog.Logger) *Manager {
-	cache := newNameCache()
+	cache := newCarNameStore()
 	mgr := &Manager{
 		cars:           make(map[string]*CarState),
 		emitter:        emitter,
@@ -109,10 +109,7 @@ func NewManager(emitter *EventEmitter, batteryLow, batteryHigh int, distanceUnit
 		cache:          cache,
 	}
 
-	// Restore cached naming state from previous runs. Both fields matter: an
-	// unnamed car has no display_name but its model drives "Model Y", and
-	// neither is re-published by TeslaMate while the car sleeps, so without the
-	// cache a restart falls back to "Car {id}".
+	// Restore cached names so an unnamed car keeps "Model Y" across a restart.
 	for carID, cc := range cache.Load() {
 		car := mgr.getOrCreate(carID)
 		if cc.DisplayName != "" {
@@ -244,8 +241,6 @@ func (m *Manager) HandleMessage(carID string, field mqtt.TopicField, value strin
 			m.logger.Info("received model", "car_id", carID, "value", value)
 		}
 		car.Model = value
-		// Persist model too so an unnamed car keeps "Model Y" across a restart
-		// while it sleeps (TeslaMate won't re-publish model until it wakes).
 		m.cacheCar(carID, func(cc *CachedCar) { cc.Model = value })
 		m.flushPendingIfEnriched(carID, car)
 	case mqtt.FieldChargeLimitSoc:
@@ -1009,8 +1004,7 @@ func displayNameForCar(carID string, car *CarState) string {
 	return "Car " + carID
 }
 
-// cacheCar applies mutate to the persisted naming state for one car and saves
-// it, preserving the other car entries (and the car's other cached field).
+// cacheCar updates one car's persisted naming state, keeping the other cars.
 func (m *Manager) cacheCar(carID string, mutate func(*CachedCar)) {
 	cars := m.cache.Load()
 	cc := cars[carID]
