@@ -109,12 +109,21 @@ func NewManager(emitter *EventEmitter, batteryLow, batteryHigh int, distanceUnit
 		cache:          cache,
 	}
 
-	// Restore cached display names from previous runs
-	for carID, name := range cache.Load() {
+	// Restore cached naming state from previous runs. Both fields matter: an
+	// unnamed car has no display_name but its model drives "Model Y", and
+	// neither is re-published by TeslaMate while the car sleeps, so without the
+	// cache a restart falls back to "Car {id}".
+	for carID, cc := range cache.Load() {
 		car := mgr.getOrCreate(carID)
-		car.DisplayName = name
-		car.initialized[mqtt.FieldDisplayName] = true
-		logger.Info("loaded cached display_name", "car_id", carID, "value", name)
+		if cc.DisplayName != "" {
+			car.DisplayName = cc.DisplayName
+			car.initialized[mqtt.FieldDisplayName] = true
+		}
+		if cc.Model != "" {
+			car.Model = cc.Model
+			car.initialized[mqtt.FieldModel] = true
+		}
+		logger.Info("loaded cached car name", "car_id", carID, "display_name", cc.DisplayName, "model", cc.Model)
 	}
 
 	return mgr
@@ -228,16 +237,16 @@ func (m *Manager) HandleMessage(carID string, field mqtt.TopicField, value strin
 			m.logger.Info("received display_name", "car_id", carID, "value", value)
 		}
 		car.DisplayName = value
-		// Persist to file cache so name survives notifier restarts
-		names := m.cache.Load()
-		names[carID] = value
-		m.cache.Save(names)
+		m.cacheCar(carID, func(cc *CachedCar) { cc.DisplayName = value })
 		m.flushPendingIfEnriched(carID, car)
 	case mqtt.FieldModel:
 		if firstTime {
 			m.logger.Info("received model", "car_id", carID, "value", value)
 		}
 		car.Model = value
+		// Persist model too so an unnamed car keeps "Model Y" across a restart
+		// while it sleeps (TeslaMate won't re-publish model until it wakes).
+		m.cacheCar(carID, func(cc *CachedCar) { cc.Model = value })
 		m.flushPendingIfEnriched(carID, car)
 	case mqtt.FieldChargeLimitSoc:
 		level, err := strconv.Atoi(value)
@@ -998,6 +1007,16 @@ func displayNameForCar(carID string, car *CarState) string {
 		}
 	}
 	return "Car " + carID
+}
+
+// cacheCar applies mutate to the persisted naming state for one car and saves
+// it, preserving the other car entries (and the car's other cached field).
+func (m *Manager) cacheCar(carID string, mutate func(*CachedCar)) {
+	cars := m.cache.Load()
+	cc := cars[carID]
+	mutate(&cc)
+	cars[carID] = cc
+	m.cache.Save(cars)
 }
 
 func (m *Manager) buildPayload(carID, eventType string, car *CarState) relay.EventPayload {
