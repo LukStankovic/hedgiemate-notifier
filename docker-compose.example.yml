@@ -12,3 +12,11 @@ services:
       MQTT_PORT: "1883"
       CAR_IDS: "1"
       LOG_LEVEL: "info"
+    # Persists the car-name cache (/data/car_names.json) so an unnamed car keeps
+    # its "Model Y" name across restarts. Without a named volume the cache lives
+    # in an anonymous volume that can be dropped on recreate.
+    volumes:
+      - hedgiemate-notifier-data:/data
+
+volumes:
+  hedgiemate-notifier-data:
