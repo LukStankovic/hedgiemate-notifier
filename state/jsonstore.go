@@ -22,6 +22,8 @@ func newJSONStore[T any](filename string, empty func() T) *jsonStore[T] {
 	return &jsonStore[T]{path: filepath.Join(dir, filename), empty: empty}
 }
 
+func (s *jsonStore[T]) Path() string { return s.path }
+
 func (s *jsonStore[T]) Load() T {
 	data, err := os.ReadFile(s.path)
 	if err != nil {

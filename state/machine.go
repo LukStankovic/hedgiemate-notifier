@@ -93,11 +93,11 @@ type Manager struct {
 	// (single-server installs leave it unset).
 	serverID string
 	logger   *slog.Logger
-	cache    *jsonStore[map[string]CachedCar]
+	cache    *carNameCache
 }
 
 func NewManager(emitter *EventEmitter, batteryLow, batteryHigh int, distanceUnit, serverID string, logger *slog.Logger) *Manager {
-	cache := newCarNameStore()
+	cache := newCarNameCache()
 	mgr := &Manager{
 		cars:           make(map[string]*CarState),
 		emitter:        emitter,
@@ -485,14 +485,13 @@ func (m *Manager) stopDrivingLiveActivity(car *CarState) {
 }
 
 // isEnriched reports whether we have enough state to build a meaningful
-// notification body without hitting the 30s deferredEmit safety net. Either
-// display_name or model is enough on the naming side — displayNameForCar
-// falls back to "Model Y" when display_name is missing, and TeslaMate omits
-// the display_name topic entirely when the car has no user-set name, so
-// requiring display_name would force every event for unnamed cars through
-// the 30s wait.
+// notification body without hitting the 30s deferredEmit safety net. The name
+// check is value-based, not just "topic seen": TeslaMate publishes an empty
+// display_name for unnamed cars, so keying off the initialized flag let an
+// event fire with an empty name before the model arrived → "Car {id}". We need
+// a real name — a non-empty display_name or a model (→ "Model Y").
 func (m *Manager) isEnriched(car *CarState) bool {
-	hasName := car.initialized[mqtt.FieldDisplayName] || car.initialized[mqtt.FieldModel]
+	hasName := car.DisplayName != "" || car.Model != ""
 	return hasName && car.initialized[mqtt.FieldBatteryLevel]
 }
 

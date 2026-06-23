@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/hedgiemate/notifier/mqtt"
 )
 
 func carStore(path string) *jsonStore[map[string]CachedCar] {
@@ -11,6 +13,10 @@ func carStore(path string) *jsonStore[map[string]CachedCar] {
 		path:  path,
 		empty: func() map[string]CachedCar { return map[string]CachedCar{} },
 	}
+}
+
+func carCache(path string) *carNameCache {
+	return &carNameCache{store: carStore(path)}
 }
 
 // TestNameCacheRoundTrip locks the user-81 "Car 1" fix: model must persist, not
@@ -62,15 +68,42 @@ func TestNameCacheClearsRemovedName(t *testing.T) {
 	}
 }
 
-// TestNameCacheLegacyFormat: the old map[string]string file degrades to an
-// empty map instead of erroring — rebuilt from live MQTT.
-func TestNameCacheLegacyFormat(t *testing.T) {
+// TestNameCacheLegacyMigration: a pre-1.4.5 map[carID]display_name file is
+// migrated so an upgrade keeps the name (the user-3759 "Thunder"→"Car 1"
+// regression) instead of orphaning it.
+func TestNameCacheLegacyMigration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "car_names.json")
-	if err := os.WriteFile(path, []byte(`{"1":"Daily"}`), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(`{"1":"Thunder","2":""}`), 0644); err != nil {
 		t.Fatalf("write legacy: %v", err)
 	}
-	if got := carStore(path).Load(); len(got) != 0 {
-		t.Errorf("legacy load = %+v, want empty map", got)
+	got := carCache(path).Load()
+	if got["1"].DisplayName != "Thunder" {
+		t.Errorf("car 1 = %+v, want migrated name Thunder", got["1"])
+	}
+	if _, ok := got["2"]; ok {
+		t.Errorf("car 2 (empty legacy name) should not be migrated, got %+v", got["2"])
+	}
+}
+
+// TestIsEnriched: an empty display_name must not count as a name — the event
+// waits for the model so it renders "Model Y", not "Car 1".
+func TestIsEnriched(t *testing.T) {
+	m := &Manager{}
+	withBattery := func(c *CarState) *CarState { c.initialized = map[mqtt.TopicField]bool{mqtt.FieldBatteryLevel: true}; return c }
+	cases := []struct {
+		name string
+		car  *CarState
+		want bool
+	}{
+		{"empty name, no model → wait", withBattery(&CarState{}), false},
+		{"empty name, has model → ready", withBattery(&CarState{Model: "Y"}), true},
+		{"named, no model → ready", withBattery(&CarState{DisplayName: "Thunder"}), true},
+		{"model but no battery → wait", &CarState{Model: "Y", initialized: map[mqtt.TopicField]bool{}}, false},
+	}
+	for _, tc := range cases {
+		if got := m.isEnriched(tc.car); got != tc.want {
+			t.Errorf("%s: isEnriched = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }
 
