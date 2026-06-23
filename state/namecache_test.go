@@ -36,6 +36,32 @@ func TestNameCacheRoundTrip(t *testing.T) {
 	}
 }
 
+// TestNameCacheClearsRemovedName: removing the Tesla name publishes an empty
+// display_name, which must overwrite the cached name so naming falls back to
+// the model ("Model Y") instead of keeping the stale old name across a restart.
+func TestNameCacheClearsRemovedName(t *testing.T) {
+	c := carStore(filepath.Join(t.TempDir(), "car_names.json"))
+
+	// Car was named "Daily" with model Y.
+	c.Save(map[string]CachedCar{"1": {DisplayName: "Daily", Model: "Y"}})
+
+	// Name removed → empty display_name arrives → cache updated (mirrors the
+	// FieldDisplayName handler: load, set, save).
+	cars := c.Load()
+	cc := cars["1"]
+	cc.DisplayName = ""
+	cars["1"] = cc
+	c.Save(cars)
+
+	got := c.Load()["1"]
+	if got.DisplayName != "" || got.Model != "Y" {
+		t.Fatalf("after name removal = %+v, want empty name, model Y", got)
+	}
+	if name := displayNameForCar("1", &CarState{DisplayName: got.DisplayName, Model: got.Model}); name != "Model Y" {
+		t.Errorf("displayNameForCar = %q, want Model Y", name)
+	}
+}
+
 // TestNameCacheLegacyFormat: the old map[string]string file degrades to an
 // empty map instead of erroring — rebuilt from live MQTT.
 func TestNameCacheLegacyFormat(t *testing.T) {
