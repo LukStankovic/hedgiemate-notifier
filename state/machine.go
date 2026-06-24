@@ -346,6 +346,9 @@ func (m *Manager) sinceConnected() time.Duration {
 // A first "Charging" within this of connect = already charging, not a new start.
 const chargingStartGrace = 90 * time.Second
 
+// Energy (kWh) above which a charge is clearly already underway, not just starting.
+const chargingStartedEnergyKWh = 0.1
+
 type chargingFirstAction int
 
 const (
@@ -360,7 +363,7 @@ func firstChargingAction(value string, sinceConnect time.Duration, energyAdded f
 	}
 	// Energy already added, or seen right at connect → charge was already
 	// running; resume updates without a "started charging" push.
-	if energyAdded > 0.1 || sinceConnect < chargingStartGrace {
+	if energyAdded > chargingStartedEnergyKWh || sinceConnect < chargingStartGrace {
 		return chargingTickerOnly
 	}
 	return chargingFullStart
