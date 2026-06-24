@@ -157,7 +157,7 @@ func (m *Manager) HandleMessage(carID string, field mqtt.TopicField, value strin
 		} else if firstTime {
 			// First charging_state is often "Charging" (TeslaMate only publishes
 			// it while charging), which the transition check above misses.
-			switch firstChargingAction(value, m.sinceConnected()) {
+			switch firstChargingAction(value, m.sinceConnected(), car.ChargeEnergyAdded) {
 			case chargingFullStart:
 				m.handleChargingStateTransition(carID, car, "", "Charging")
 			case chargingTickerOnly:
@@ -354,11 +354,13 @@ const (
 	chargingFullStart  // new charge: charging_started + start LA
 )
 
-func firstChargingAction(value string, sinceConnect time.Duration) chargingFirstAction {
+func firstChargingAction(value string, sinceConnect time.Duration, energyAdded float64) chargingFirstAction {
 	if value != "Charging" {
 		return chargingNoAction
 	}
-	if sinceConnect < chargingStartGrace {
+	// Energy already added, or seen right at connect → charge was already
+	// running; resume updates without a "started charging" push.
+	if energyAdded > 0.1 || sinceConnect < chargingStartGrace {
 		return chargingTickerOnly
 	}
 	return chargingFullStart
