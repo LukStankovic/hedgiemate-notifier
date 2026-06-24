@@ -71,6 +71,7 @@ func main() {
 		stateMgr.HandleMessage,
 		logger,
 	)
+	mqttClient.SetOnConnect(stateMgr.MarkConnected)
 
 	// Connect to MQTT
 	if err := mqttClient.Connect(); err != nil {

@@ -18,9 +18,13 @@ type Client struct {
 	carIDs    []string
 	carSet    map[string]bool // fast lookup for car ID filtering
 	namespace string          // MQTT topic namespace (e.g. "/my_namespace")
-	handler   MessageHandler
-	logger    *slog.Logger
+	handler     MessageHandler
+	onConnectCb func()
+	logger      *slog.Logger
 }
+
+// SetOnConnect sets a callback run on each (re)connect, before subscribing.
+func (c *Client) SetOnConnect(fn func()) { c.onConnectCb = fn }
 
 // NewClient creates a new MQTT client. Call Connect() to start.
 func NewClient(host, port, username, password, clientID string, useTLS bool, namespace string, carIDs []string, handler MessageHandler, logger *slog.Logger) *Client {
@@ -99,6 +103,11 @@ func (c *Client) Disconnect() {
 
 func (c *Client) onConnect(client pahomqtt.Client) {
 	c.logger.Info("connected to MQTT broker, subscribing to topics")
+
+	// Before subscribing — retained messages land right after.
+	if c.onConnectCb != nil {
+		c.onConnectCb()
+	}
 
 	// Single wildcard subscription — matches all cars and all fields.
 	// Retained messages for every topic are delivered immediately.

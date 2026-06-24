@@ -91,9 +91,10 @@ type Manager struct {
 	// serverID tags every outgoing EventPayload so multi-server iOS users
 	// see notifications open on the right (server, car). Empty by default
 	// (single-server installs leave it unset).
-	serverID string
-	logger   *slog.Logger
-	cache    *carNameCache
+	serverID    string
+	logger      *slog.Logger
+	cache       *carNameCache
+	connectedAt time.Time
 }
 
 func NewManager(emitter *EventEmitter, batteryLow, batteryHigh int, distanceUnit, serverID string, logger *slog.Logger) *Manager {
@@ -146,10 +147,23 @@ func (m *Manager) HandleMessage(carID string, field mqtt.TopicField, value strin
 		}
 
 	case mqtt.FieldChargingState:
+		if firstTime {
+			m.logger.Info("received charging_state", "car_id", carID, "value", value)
+		}
 		prev := car.ChargingState
 		car.ChargingState = value
 		if !firstTime && prev != value {
 			m.handleChargingStateTransition(carID, car, prev, value)
+		} else if firstTime {
+			// First charging_state is often "Charging" (TeslaMate only publishes
+			// it while charging), which the transition check above misses.
+			switch firstChargingAction(value, m.sinceConnected()) {
+			case chargingFullStart:
+				m.handleChargingStateTransition(carID, car, "", "Charging")
+			case chargingTickerOnly:
+				m.logger.Info("connected mid-charge, resuming live activity", "car_id", carID)
+				m.startLiveActivity(carID, car)
+			}
 		}
 		// Battery threshold latches re-arm by level in checkBatteryThresholds,
 		// not here. Resetting them on every charging_state change re-fired
@@ -313,6 +327,41 @@ func (m *Manager) handleStateTransition(carID string, car *CarState, prev, next 
 	if (prev == "asleep" || prev == "suspended" || prev == "offline") && next != "asleep" && next != "suspended" && next != "offline" {
 		m.emit(carID, "vehicle_woke", car)
 	}
+}
+
+// MarkConnected records an MQTT (re)connect.
+func (m *Manager) MarkConnected() {
+	m.mu.Lock()
+	m.connectedAt = time.Now()
+	m.mu.Unlock()
+}
+
+func (m *Manager) sinceConnected() time.Duration {
+	if m.connectedAt.IsZero() {
+		return time.Hour // never connected (tests): treat as a real start
+	}
+	return time.Since(m.connectedAt)
+}
+
+// A first "Charging" within this of connect = already charging, not a new start.
+const chargingStartGrace = 90 * time.Second
+
+type chargingFirstAction int
+
+const (
+	chargingNoAction chargingFirstAction = iota
+	chargingTickerOnly // resume LA updates, no push
+	chargingFullStart  // new charge: charging_started + start LA
+)
+
+func firstChargingAction(value string, sinceConnect time.Duration) chargingFirstAction {
+	if value != "Charging" {
+		return chargingNoAction
+	}
+	if sinceConnect < chargingStartGrace {
+		return chargingTickerOnly
+	}
+	return chargingFullStart
 }
 
 func (m *Manager) handleChargingStateTransition(carID string, car *CarState, prev, next string) {
