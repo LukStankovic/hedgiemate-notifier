@@ -97,6 +97,7 @@ All configuration is via environment variables:
 | `geofence_exited` | Vehicle exits a geofence |
 | `vehicle_asleep` | Vehicle goes to sleep |
 | `vehicle_woke` | Vehicle wakes up |
+| `sentry_recording` | Sentry Mode starts recording (center_display_state == 7) |
 | `live_activity_update` | Periodic charging data for Live Activities (30s/60s) |
 
 ## Multiple Cars

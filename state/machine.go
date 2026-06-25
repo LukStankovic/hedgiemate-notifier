@@ -30,25 +30,26 @@ type activeRouteLocation struct {
 
 // CarState holds the current known state of a single car.
 type CarState struct {
-	State             string
-	ChargingState     string
-	BatteryLevel      int
-	PluggedIn         bool
-	Geofence          string
-	UpdateAvailable   string
-	ChargerPower      float64
-	ChargeEnergyAdded float64
-	TimeToFullCharge  float64
-	RatedRangeKm      float64
-	UsableBattery     int
-	DisplayName       string
-	Model             string
-	ChargeLimitSoc    int
-	UpdateVersion     string
-	PreviousGeofence  string // previous geofence name before update
-	Speed             int
-	OutsideTemp       float64
-	Odometer          float64
+	State              string
+	ChargingState      string
+	BatteryLevel       int
+	PluggedIn          bool
+	Geofence           string
+	UpdateAvailable    string
+	ChargerPower       float64
+	ChargeEnergyAdded  float64
+	TimeToFullCharge   float64
+	RatedRangeKm       float64
+	UsableBattery      int
+	DisplayName        string
+	Model              string
+	ChargeLimitSoc     int
+	UpdateVersion      string
+	PreviousGeofence   string // previous geofence name before update
+	Speed              int
+	OutsideTemp        float64
+	Odometer           float64
+	CenterDisplayState int // Tesla center-display state; 7 = Sentry Mode recording
 
 	// Navigation / active route (from JSON "active_route" topic)
 	ActiveRouteDestination      string
@@ -280,6 +281,18 @@ func (m *Manager) HandleMessage(carID string, field mqtt.TopicField, value strin
 		if err == nil {
 			car.Odometer = f
 		}
+	case mqtt.FieldCenterDisplayState:
+		s, err := strconv.Atoi(value)
+		if err != nil {
+			m.logger.Warn("invalid center_display_state", "value", value, "error", err)
+			return
+		}
+		prev := car.CenterDisplayState
+		car.CenterDisplayState = s
+		// Edge into 7 = Sentry Mode recording; fires once per detection.
+		if !firstTime && prev != 7 && s == 7 {
+			m.emit(carID, "sentry_recording", car)
+		}
 	case mqtt.FieldActiveRoute:
 		var route activeRoutePayload
 		if err := json.Unmarshal([]byte(value), &route); err != nil {
@@ -349,9 +362,9 @@ const chargingStartGrace = 90 * time.Second
 type chargingFirstAction int
 
 const (
-	chargingNoAction chargingFirstAction = iota
-	chargingTickerOnly // resume LA updates, no push
-	chargingFullStart  // new charge: charging_started + start LA
+	chargingNoAction   chargingFirstAction = iota
+	chargingTickerOnly                     // resume LA updates, no push
+	chargingFullStart                      // new charge: charging_started + start LA
 )
 
 func firstChargingAction(value string, sinceConnect time.Duration) chargingFirstAction {
@@ -734,6 +747,20 @@ func (m *Manager) buildNotification(eventType, carName string, car *CarState) (t
 			bodyKey = "notification.vehicle_woke.body"
 			bodyArgs = []string{bat}
 			fallbackBody = bat
+		}
+
+	case "sentry_recording":
+		titleKey = "notification.sentry_recording.title"
+		titleArgs = []string{carName}
+		fallbackTitle = carName + " Sentry recording"
+		if hasGeo {
+			bodyKey = "notification.sentry_recording.body.geofence"
+			bodyArgs = []string{car.Geofence}
+			fallbackBody = car.Geofence
+		} else {
+			bodyKey = "notification.sentry_recording.body"
+			bodyArgs = nil
+			fallbackBody = "Sentry Mode is recording"
 		}
 
 	case "drive_started":

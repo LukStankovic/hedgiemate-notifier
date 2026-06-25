@@ -28,6 +28,8 @@ const (
 	FieldOutsideTemp       TopicField = "outside_temp"
 	FieldOdometer          TopicField = "odometer"
 	FieldActiveRoute       TopicField = "active_route"
+	// FieldCenterDisplayState: Tesla display state; 7 = Sentry Mode recording.
+	FieldCenterDisplayState TopicField = "center_display_state"
 )
 
 var allFields = []TopicField{
@@ -50,6 +52,7 @@ var allFields = []TopicField{
 	FieldOutsideTemp,
 	FieldOdometer,
 	FieldActiveRoute,
+	FieldCenterDisplayState,
 }
 
 // knownFields is a fast lookup set for filtering incoming messages.

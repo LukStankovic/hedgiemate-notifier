@@ -43,6 +43,7 @@ var contractEvents = []string{
 	"charger_connected", "charger_disconnected",
 	"software_update",
 	"geofence_entered", "geofence_exited",
+	"sentry_recording",
 }
 
 // TestEventPayloadContract freezes the EventPayload JSON for every event type
