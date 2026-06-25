@@ -2,7 +2,12 @@
 #
 # VERSION is baked into the binary (main.version) and reported to the relay so
 # it can flag outdated notifiers. No secrets live here — `docker login` (Docker
-# Hub + ghcr) and `gh auth` are configured separately.
+# Hub + ghcr) and `gh auth` are configured separately. Docker Hub description
+# push reads DOCKERHUB_USER/DOCKERHUB_TOKEN from .release.env (gitignored); see
+# .release.env.dist. Env vars override the file.
+
+# Local, gitignored release secrets (DOCKERHUB_USER, DOCKERHUB_TOKEN). Optional.
+-include .release.env
 
 PLATFORMS ?= linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v6
 DOCKERHUB_REPO ?= hedgiemate/notifier
