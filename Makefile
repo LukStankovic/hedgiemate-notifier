@@ -23,6 +23,35 @@ release:
 	$(MAKE) changelog VERSION=$(VERSION)
 	@echo "released v$(VERSION)"
 
+# --- semver release shortcuts -------------------------------------------------
+# Bump from the latest vX.Y.Z tag, then run `release` with the computed version.
+#   patch: 1.5.4 -> 1.5.5   minor: 1.5.4 -> 1.6.0   major: 1.5.4 -> 2.0.0
+.PHONY: version release-patch release-minor release-major
+CURRENT_VERSION := $(shell git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')
+
+## version: print the current tag and the next patch/minor/major versions.
+version:
+	@cur="$(CURRENT_VERSION)"; [ -n "$$cur" ] || cur="0.0.0"; \
+	echo "current:    $$cur"; \
+	echo "next patch: $$(echo $$cur | awk -F. '{printf "%d.%d.%d", $$1,$$2,$$3+1}')"; \
+	echo "next minor: $$(echo $$cur | awk -F. '{printf "%d.%d.0", $$1,$$2+1}')"; \
+	echo "next major: $$(echo $$cur | awk -F. '{printf "%d.0.0", $$1+1}')"
+
+## release-patch: bugfix bump (x.y.Z+1) then release. Passes through NOTES/NOTES_FILE.
+release-patch:
+	@cur="$(CURRENT_VERSION)"; [ -n "$$cur" ] || cur="0.0.0"; \
+	$(MAKE) release VERSION=$$(echo $$cur | awk -F. '{printf "%d.%d.%d", $$1,$$2,$$3+1}')
+
+## release-minor: feature bump (x.Y+1.0) then release.
+release-minor:
+	@cur="$(CURRENT_VERSION)"; [ -n "$$cur" ] || cur="0.0.0"; \
+	$(MAKE) release VERSION=$$(echo $$cur | awk -F. '{printf "%d.%d.0", $$1,$$2+1}')
+
+## release-major: breaking bump (X+1.0.0) then release.
+release-major:
+	@cur="$(CURRENT_VERSION)"; [ -n "$$cur" ] || cur="0.0.0"; \
+	$(MAKE) release VERSION=$$(echo $$cur | awk -F. '{printf "%d.0.0", $$1+1}')
+
 ## changelog: append the GitHub release notes for VERSION to CHANGELOG.md and push.
 changelog:
 	@test -n "$(VERSION)" || (echo "VERSION required"; exit 1)
