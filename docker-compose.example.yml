@@ -1,5 +1,3 @@
-version: "3"
-
 services:
   hedgiemate-notifier:
     image: hedgiemate/notifier:latest
@@ -12,8 +10,11 @@ services:
       MQTT_PORT: "1883"
       CAR_IDS: "1"
       LOG_LEVEL: "info"
+      SERVER_ID: "your-server-uuid"   # from the iOS app; per-car settings need it
     volumes:
       - hedgiemate-notifier-data:/data
 
+# Optional — the relay also remembers car names. If you mount one, prefer a
+# named volume: the container runs as non-root and cannot write a root-owned dir.
 volumes:
   hedgiemate-notifier-data:

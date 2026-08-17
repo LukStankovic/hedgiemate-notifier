@@ -33,7 +33,18 @@ services:
       MQTT_PORT: "1883"
       CAR_IDS: "1"
       LOG_LEVEL: "info"
+      SERVER_ID: "your-server-uuid"
+    volumes:
+      - hedgiemate-notifier-data:/data
+
+volumes:
+  hedgiemate-notifier-data:
 ```
+
+The volume is optional. It caches car names so they survive a `docker compose
+down`; without it the relay fills the name in anyway. If you do mount one, use
+a named volume rather than a bind mount — the container runs as a non-root user
+and cannot write to a host directory Docker created as root.
 
 Then run:
 
@@ -73,10 +84,14 @@ All configuration is via environment variables:
 | `MQTT_USERNAME` | No | - | MQTT authentication username |
 | `MQTT_PASSWORD` | No | - | MQTT authentication password |
 | `MQTT_CLIENT_ID` | No | `hedgiemate-notifier` | MQTT client ID |
+| `MQTT_TLS` | No | `false` | Set to `true` for TLS. Switches the default port to `8883` |
+| `MQTT_NAMESPACE` | No | - | TeslaMate `MQTT_NAMESPACE`, if you set one. Topics become `teslamate<namespace>/cars/#` |
 | `CAR_IDS` | No | `1` | Comma-separated car IDs to monitor |
 | `RELAY_URL` | No | `https://push.hedgiemate.com` | Relay server URL |
+| `SERVER_ID` | Yes | - | Server UUID from the iOS app, included in the snippet it gives you. The notifier starts without it, but per-server and per-car notification settings made in the app are then ignored |
 | `BATTERY_LOW_THRESHOLD` | No | `20` | Battery low notification threshold (%) |
 | `BATTERY_HIGH_THRESHOLD` | No | `90` | Battery full notification threshold (%) |
+| `DISTANCE_UNIT` | No | `km` | `km` or `mi` |
 | `LOG_LEVEL` | No | `info` | Log level: `debug`, `info`, `warn`, `error` |
 
 ## Supported Events
@@ -95,10 +110,12 @@ All configuration is via environment variables:
 | `software_update` | New software update available |
 | `geofence_entered` | Vehicle enters a geofence |
 | `geofence_exited` | Vehicle exits a geofence |
+| `vehicle_falling_asleep` | Vehicle is going to sleep |
 | `vehicle_asleep` | Vehicle goes to sleep |
 | `vehicle_woke` | Vehicle wakes up |
 | `sentry_recording` | Sentry Mode starts recording (center_display_state == 7) |
 | `live_activity_update` | Periodic charging data for Live Activities (30s/60s) |
+| `live_activity_driving_update` | Periodic drive data for Live Activities (15s/30s) |
 
 ## Multiple Cars
 
