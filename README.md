@@ -143,6 +143,10 @@ MQTT Broker ──> MQTT Client ──> State Machine ──> Event Emitter ─�
 
 See the [GitHub Releases](https://github.com/LukStankovic/hedgiemate-notifier/releases) page for release notes, or [`CHANGELOG.md`](https://github.com/LukStankovic/hedgiemate-notifier/blob/master/CHANGELOG.md) in the repo.
 
+## License
+
+MIT — see [`LICENSE`](LICENSE).
+
 ---
 
 **Disclaimer:** This project is an unofficial community tool and is not affiliated with, endorsed by, or supported by the official TeslaMate project.
