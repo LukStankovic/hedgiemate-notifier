@@ -3,7 +3,31 @@
 PLATFORMS ?= linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v6
 DOCKERHUB_REPO ?= hedgiemate/notifier
 
-.PHONY: release images build test changelog dockerhub-description
+.PHONY: release beta images build test changelog dockerhub-description
+
+## beta: push ONE version-tagged image for private testing. No :latest, no git
+## tag, no GitHub release, no changelog.
+## Usage: make beta VERSION=1.6.0-beta.1
+##
+## Safe to run whenever, for two independent reasons:
+##   - Users pin :latest and this target never moves it, so nobody is pulled
+##     onto the beta.
+##   - The relay picks "newest notifier" from the Docker Hub tags made of digits
+##     and dots only (notifierver.IsSemverTag), so a tag containing "-beta" is
+##     skipped and no in-app update banner fires.
+beta:
+	@test -n "$(VERSION)" || (echo "VERSION required: make beta VERSION=1.6.0-beta.1"; exit 1)
+	@case "$(VERSION)" in \
+		*[!0-9.]*) ;; \
+		*) echo "refusing: $(VERSION) is a plain version, the relay would treat it as the fleet's latest. Use e.g. $(VERSION)-beta.1"; exit 1 ;; \
+	esac
+	docker buildx build --platform $(PLATFORMS) \
+		--build-arg VERSION=$(VERSION) \
+		-t hedgiemate/notifier:$(VERSION) \
+		-t ghcr.io/lukstankovic/hedgiemate-notifier:$(VERSION) \
+		--push .
+	@echo "pushed beta $(VERSION), :latest untouched, no banner"
+	@echo "run it with: image: hedgiemate/notifier:$(VERSION)"
 
 ## release: build+push images, tag, GitHub release, sync CHANGELOG.md.
 ## Usage: make release VERSION=1.4.1 [NOTES="..." | NOTES_FILE=highlights.md]

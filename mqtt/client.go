@@ -14,17 +14,24 @@ type MessageHandler func(carID string, field TopicField, value string)
 
 // Client wraps the Paho MQTT client with auto-reconnect and topic subscriptions.
 type Client struct {
-	client    pahomqtt.Client
-	carIDs    []string
-	carSet    map[string]bool // fast lookup for car ID filtering
-	namespace string          // MQTT topic namespace (e.g. "/my_namespace")
+	client      pahomqtt.Client
+	carIDs      []string
+	carSet      map[string]bool // fast lookup for car ID filtering
+	namespace   string          // MQTT topic namespace (e.g. "/my_namespace")
 	handler     MessageHandler
+	unknownCb   MessageHandler
 	onConnectCb func()
 	logger      *slog.Logger
 }
 
 // SetOnConnect sets a callback run on each (re)connect, before subscribing.
 func (c *Client) SetOnConnect(fn func()) { c.onConnectCb = fn }
+
+// SetUnknownHandler routes fields outside knownFields to fn instead of dropping
+// them. Optional; unset keeps the previous behaviour of silently ignoring them.
+// The wildcard subscription already delivers these messages, so this costs one
+// call on fields that were being thrown away anyway.
+func (c *Client) SetUnknownHandler(fn MessageHandler) { c.unknownCb = fn }
 
 // NewClient creates a new MQTT client. Call Connect() to start.
 func NewClient(host, port, username, password, clientID string, useTLS bool, namespace string, carIDs []string, handler MessageHandler, logger *slog.Logger) *Client {
@@ -142,8 +149,12 @@ func (c *Client) onMessage(_ pahomqtt.Client, msg pahomqtt.Message) {
 		return
 	}
 
-	// Only process fields we care about
+	// Only process fields we care about. Anything else goes to the unknown
+	// handler when one is set (raw passthrough) and is dropped otherwise.
 	if !knownFields[field] {
+		if c.unknownCb != nil {
+			c.unknownCb(carID, field, string(msg.Payload()))
+		}
 		return
 	}
 

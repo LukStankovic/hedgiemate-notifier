@@ -15,12 +15,26 @@ import (
 	"time"
 )
 
+// maxResponseBytes bounds how much of the relay's reply we read. The body is a
+// short JSON status plus at most a handful of config values; reading it
+// unbounded would hand a compromised or broken relay a memory lever over every
+// self-hosted notifier.
+const maxResponseBytes = 64 << 10
+
+// ConfigApplier receives the relay-driven tuning block. Satisfied by
+// remotecfg.Store; kept as an interface here so the transport has no opinion
+// about how the config is stored or clamped.
+type ConfigApplier interface {
+	Apply(version int, values map[string]string) bool
+}
+
 type Client struct {
 	relayURL  string
 	userToken string
 	version   string
 	http      *http.Client
 	logger    *slog.Logger
+	config    ConfigApplier
 }
 
 func NewClient(relayURL, userToken, version string, logger *slog.Logger) *Client {
@@ -33,6 +47,40 @@ func NewClient(relayURL, userToken, version string, logger *slog.Logger) *Client
 		},
 		logger: logger,
 	}
+}
+
+// SetConfigApplier wires up remote-config handling. Optional: with no applier
+// the response body is drained and discarded exactly as before.
+func (c *Client) SetConfigApplier(a ConfigApplier) {
+	c.config = a
+}
+
+// readConfig consumes the response body and hands any config it carries to the
+// applier.
+//
+// Deliberately best-effort and silent about most failures: config is a
+// convenience, delivering the event is the job. A truncated body, a garbled
+// JSON, or a relay that knows nothing about config must never turn a delivered
+// event into a failed one, so this returns nothing and callers ignore it.
+func (c *Client) readConfig(body io.Reader) {
+	limited := io.LimitReader(body, maxResponseBytes)
+	if c.config == nil {
+		io.Copy(io.Discard, limited)
+		return
+	}
+	data, err := io.ReadAll(limited)
+	if err != nil || len(data) == 0 {
+		return
+	}
+	var resp EventResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		c.logger.Debug("relay response was not decodable JSON", "error", err)
+		return
+	}
+	if resp.Config == nil {
+		return
+	}
+	c.config.Apply(resp.Config.Version, resp.Config.Values)
 }
 
 func (c *Client) SendEvent(payload EventPayload) error {
@@ -85,7 +133,7 @@ func (c *Client) SendEvent(payload EventPayload) error {
 			lastErr = fmt.Errorf("request failed: %w", err)
 			continue
 		}
-		io.Copy(io.Discard, resp.Body)
+		c.readConfig(resp.Body)
 		resp.Body.Close()
 
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {

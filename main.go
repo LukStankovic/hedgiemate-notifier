@@ -11,6 +11,7 @@ import (
 	"github.com/hedgiemate/notifier/config"
 	"github.com/hedgiemate/notifier/mqtt"
 	"github.com/hedgiemate/notifier/relay"
+	"github.com/hedgiemate/notifier/remotecfg"
 	"github.com/hedgiemate/notifier/state"
 )
 
@@ -49,14 +50,21 @@ func main() {
 		"distance_unit", cfg.DistanceUnit,
 	)
 
+	// Relay-driven tuning (Live Activity cadence). Empty until the relay's
+	// first event response, so everything below starts on this build's own
+	// defaults and stays there if the relay never sends any config.
+	remoteCfg := remotecfg.New(logger)
+
 	// Initialize relay client
 	relayClient := relay.NewClient(cfg.RelayURL, cfg.UserToken, version, logger)
+	relayClient.SetConfigApplier(remoteCfg)
 
 	// Initialize event emitter with debounce
 	emitter := state.NewEventEmitter(relayClient, logger)
 
 	// Initialize state manager
 	stateMgr := state.NewManager(emitter, cfg.BatteryLowThresh, cfg.BatteryHighThresh, cfg.DistanceUnit, cfg.ServerID, logger)
+	stateMgr.SetRemoteConfig(remoteCfg)
 
 	// Initialize MQTT client
 	mqttClient := mqtt.NewClient(
@@ -72,6 +80,9 @@ func main() {
 		logger,
 	)
 	mqttClient.SetOnConnect(stateMgr.MarkConnected)
+	// Fields this build has no typed member for. Stored only while the relay
+	// has data.raw_enabled on, so this is a no-op by default.
+	mqttClient.SetUnknownHandler(stateMgr.HandleUnknownMessage)
 
 	// Connect to MQTT
 	if err := mqttClient.Connect(); err != nil {

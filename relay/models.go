@@ -66,4 +66,28 @@ type EventData struct {
 	ActiveRouteTrafficDelay      float64 `json:"active_route_traffic_delay,omitempty"`
 	ActiveRouteLatitude          float64 `json:"active_route_latitude,omitempty"`
 	ActiveRouteLongitude         float64 `json:"active_route_longitude,omitempty"`
+	// Raw carries every MQTT field seen for this car as its literal published
+	// string, including fields this build has no typed member for. Off unless
+	// the relay sets data.raw_enabled, so it costs nothing until something
+	// needs it — the point is that a future relay or iOS feature can read a new
+	// TeslaMate field without another notifier release.
+	Raw map[string]string `json:"raw,omitempty"`
+}
+
+// EventResponse is the relay's reply to POST /v1/events. Only Config is acted
+// on; Status is logged. Every field is optional: an older relay returns a body
+// that decodes to the zero value, which means "no config", which means the
+// notifier keeps its built-in defaults.
+type EventResponse struct {
+	Status string        `json:"status,omitempty"`
+	Config *RemoteConfig `json:"config,omitempty"`
+}
+
+// RemoteConfig is the relay-driven tuning block. Version is a monotonic stamp
+// the relay bumps whenever the values change; the notifier ignores anything not
+// newer than what it already applied, because responses to concurrent event
+// POSTs can arrive out of order.
+type RemoteConfig struct {
+	Version int               `json:"version"`
+	Values  map[string]string `json:"values"`
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/hedgiemate/notifier/mqtt"
 	"github.com/hedgiemate/notifier/relay"
+	"github.com/hedgiemate/notifier/remotecfg"
 )
 
 // activeRoutePayload matches the JSON from TeslaMate's "active_route" MQTT topic.
@@ -79,6 +80,12 @@ type CarState struct {
 
 	// Events deferred until enrichment data (display_name, battery_level) arrives
 	pendingEvents []string
+
+	// raw holds every MQTT field seen for this car as its published string,
+	// populated only while the relay has data.raw_enabled on. Bounded by
+	// maxRawFields / maxRawValueLen so a chatty or misconfigured broker cannot
+	// grow it without limit.
+	raw map[string]string
 }
 
 // Manager coordinates state machines for all monitored cars.
@@ -96,6 +103,130 @@ type Manager struct {
 	logger      *slog.Logger
 	cache       *carNameCache
 	connectedAt time.Time
+	// cfg is the relay-driven tuning block. Nil is a supported state (no relay
+	// config yet, or a test constructing the manager directly) and every read
+	// goes through the accessors below, which fall back to the built-in
+	// defaults — the values this notifier shipped with.
+	cfg *remotecfg.Store
+}
+
+// Built-in Live Activity cadence. These are the values the notifier used before
+// the cadence became relay-tunable, and they stay the fallback: a relay that
+// sends no config, an unreachable relay, and the seconds after a restart all
+// behave exactly as this build always did.
+const (
+	defaultDriveTick       = 30 * time.Second
+	defaultDriveTickFast   = 15 * time.Second
+	defaultDriveFastAbove  = 80.0 // km/h; MQTT speed is always metric
+	defaultChargeTick      = 60 * time.Second
+	defaultChargeTickFast  = 30 * time.Second
+	defaultChargeFastAbove = 11.0 // kW, i.e. faster than single-phase AC
+)
+
+// Bounds for the raw field passthrough.
+const (
+	maxRawFields   = 64
+	maxRawValueLen = 256
+)
+
+// SetRemoteConfig attaches the relay-driven config store. Safe to call once at
+// startup before MQTT is connected; the store itself is concurrency-safe.
+func (m *Manager) SetRemoteConfig(cfg *remotecfg.Store) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cfg = cfg
+}
+
+// drivingInterval is how often a driving Live Activity is refreshed at the
+// car's current speed. Called both when the ticker starts and on every tick, so
+// a config change lands on the next tick without restarting anything.
+func (m *Manager) drivingInterval(car *CarState) time.Duration {
+	slow, fast, above := defaultDriveTick, defaultDriveTickFast, defaultDriveFastAbove
+	if m.cfg != nil {
+		slow = m.cfg.Duration(remotecfg.KeyDriveTick, slow, remotecfg.MinTick, remotecfg.MaxTick)
+		fast = m.cfg.Duration(remotecfg.KeyDriveTickFast, fast, remotecfg.MinTick, remotecfg.MaxTick)
+		above = m.cfg.Float(remotecfg.KeyDriveFastAbove, above, 0, 400)
+	}
+	if float64(car.Speed) > above {
+		return fast
+	}
+	return slow
+}
+
+// chargingInterval is the same for a charging Live Activity, tiered by power
+// rather than speed.
+func (m *Manager) chargingInterval(car *CarState) time.Duration {
+	slow, fast, above := defaultChargeTick, defaultChargeTickFast, defaultChargeFastAbove
+	if m.cfg != nil {
+		slow = m.cfg.Duration(remotecfg.KeyChargeTick, slow, remotecfg.MinTick, remotecfg.MaxTick)
+		fast = m.cfg.Duration(remotecfg.KeyChargeTickFast, fast, remotecfg.MinTick, remotecfg.MaxTick)
+		above = m.cfg.Float(remotecfg.KeyChargeFastAbove, above, 0, 400)
+	}
+	if car.ChargerPower > above {
+		return fast
+	}
+	return slow
+}
+
+// rawEnabled reports whether the relay asked for the raw MQTT field map.
+func (m *Manager) rawEnabled() bool {
+	if m.cfg == nil {
+		return false
+	}
+	return m.cfg.Bool(remotecfg.KeyRawFields, false)
+}
+
+// HandleUnknownMessage records an MQTT field this build has no typed member
+// for. The MQTT client routes anything outside knownFields here, so the relay
+// can turn on data.raw_enabled and start reading a new TeslaMate field with no
+// notifier release. Dropped entirely while the flag is off.
+func (m *Manager) HandleUnknownMessage(carID string, field mqtt.TopicField, value string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.rawEnabled() {
+		return
+	}
+	m.recordRaw(m.getOrCreate(carID), field, value)
+}
+
+// recordRaw stores one field's literal published value. Caller holds m.mu.
+//
+// The field cap is a "stop growing" cap, not an LRU: once 64 distinct fields
+// are known, new ones are dropped while existing ones keep updating. TeslaMate
+// publishes well under that, so hitting it means something unexpected is on the
+// topic tree and silently ignoring the excess is the safe response.
+func (m *Manager) recordRaw(car *CarState, field mqtt.TopicField, value string) {
+	if !m.rawEnabled() {
+		// Keep no stale snapshot around after the relay turns the flag off.
+		if car.raw != nil {
+			car.raw = nil
+		}
+		return
+	}
+	if len(value) > maxRawValueLen {
+		value = value[:maxRawValueLen]
+	}
+	if car.raw == nil {
+		car.raw = make(map[string]string, 32)
+	}
+	key := string(field)
+	if _, exists := car.raw[key]; !exists && len(car.raw) >= maxRawFields {
+		return
+	}
+	car.raw[key] = value
+}
+
+// rawSnapshot copies the raw map for an outgoing payload. A copy, not the live
+// map: the payload is marshalled on another goroutine after m.mu is released.
+func rawSnapshot(car *CarState) map[string]string {
+	if len(car.raw) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(car.raw))
+	for k, v := range car.raw {
+		out[k] = v
+	}
+	return out
 }
 
 func NewManager(emitter *EventEmitter, batteryLow, batteryHigh int, distanceUnit, serverID string, logger *slog.Logger) *Manager {
@@ -134,6 +265,7 @@ func (m *Manager) HandleMessage(carID string, field mqtt.TopicField, value strin
 	defer m.mu.Unlock()
 
 	car := m.getOrCreate(carID)
+	m.recordRaw(car, field, value)
 
 	// Check if this field has been seen before (first value = initialization, not transition)
 	firstTime := !car.initialized[field]
@@ -437,10 +569,7 @@ func (m *Manager) batteryThresholdEvents(car *CarState) []string {
 func (m *Manager) startLiveActivity(carID string, car *CarState) {
 	m.stopLiveActivity(car)
 
-	interval := 60 * time.Second
-	if car.ChargerPower > 11.0 {
-		interval = 30 * time.Second
-	}
+	interval := m.chargingInterval(car)
 
 	car.liveActivityTicker = time.NewTicker(interval)
 	car.liveActivityStop = make(chan struct{})
@@ -457,11 +586,9 @@ func (m *Manager) startLiveActivity(carID string, car *CarState) {
 				}
 				payload := m.buildPayload(carID, "live_activity_update", car)
 
-				// Adjust ticker interval based on current power
-				newInterval := 60 * time.Second
-				if car.ChargerPower > 11.0 {
-					newInterval = 30 * time.Second
-				}
+				// Re-resolve every tick: picks up both a power change and a
+				// cadence change the relay pushed since the last tick.
+				newInterval := m.chargingInterval(car)
 				if newInterval != interval {
 					interval = newInterval
 					car.liveActivityTicker.Reset(interval)
@@ -494,11 +621,7 @@ func (m *Manager) startDrivingLiveActivity(carID string, car *CarState) {
 	car.driveStartTime = time.Now()
 	car.driveStartOdometer = car.Odometer
 
-	// Adaptive interval: 15s at highway speed, 30s otherwise
-	interval := 30 * time.Second
-	if car.Speed > 80 {
-		interval = 15 * time.Second
-	}
+	interval := m.drivingInterval(car)
 
 	car.drivingTicker = time.NewTicker(interval)
 	car.drivingStop = make(chan struct{})
@@ -515,11 +638,9 @@ func (m *Manager) startDrivingLiveActivity(carID string, car *CarState) {
 				}
 				payload := m.buildPayload(carID, "live_activity_driving_update", car)
 
-				// Adjust ticker interval based on current speed
-				newInterval := 30 * time.Second
-				if car.Speed > 80 {
-					newInterval = 15 * time.Second
-				}
+				// Re-resolve every tick: picks up both a speed change and a
+				// cadence change the relay pushed since the last tick.
+				newInterval := m.drivingInterval(car)
 				if newInterval != interval {
 					interval = newInterval
 					car.drivingTicker.Reset(interval)
@@ -1144,6 +1265,7 @@ func (m *Manager) buildPayload(carID, eventType string, car *CarState) relay.Eve
 			ActiveRouteTrafficDelay:      car.ActiveRouteTrafficDelay,
 			// Location stored in CarState but not sent to relay (privacy)
 			// ActiveRouteLatitude / ActiveRouteLongitude ready when needed
+			Raw: rawSnapshot(car),
 		},
 	}
 }
