@@ -114,8 +114,27 @@ All configuration is via environment variables:
 | `vehicle_asleep` | Vehicle goes to sleep |
 | `vehicle_woke` | Vehicle wakes up |
 | `sentry_recording` | Sentry Mode starts recording (center_display_state == 7) |
-| `live_activity_update` | Periodic charging data for Live Activities (30s/60s) |
-| `live_activity_driving_update` | Periodic drive data for Live Activities (15s/30s) |
+| `live_activity_update` | Periodic charging data for Live Activities (60s, 30s above 11 kW) |
+| `live_activity_driving_update` | Periodic drive data for Live Activities (30s, 15s above 80 km/h) |
+
+## Live Activity Cadence
+
+Those two intervals are the defaults, and since 1.6.0 they are no longer fixed:
+the relay may send new ones on its reply to each event, and the notifier applies
+them on the next tick. Nothing to configure here — the values are set per user
+(and per device) in the HedgieMate relay, so the cadence can be retuned without
+you pulling a new image.
+
+If the relay says nothing, or runs an older version, the defaults above apply
+unchanged. Every value received is clamped locally to between 5 and 120 seconds,
+so a bad value upstream cannot spin the ticker up or stall your Live Activities.
+Sampling faster than about 5 seconds is pointless anyway: TeslaMate polls the car
+roughly every 2.5 seconds, and Apple throttles apps that push Live Activity
+updates too often.
+
+The relay can also ask for a raw passthrough of every MQTT field this build has
+no typed member for (`data.raw`). Off unless requested, and it exists so a new
+TeslaMate field can be used without another notifier release.
 
 ## Multiple Cars
 
@@ -138,6 +157,9 @@ MQTT Broker ──> MQTT Client ──> State Machine ──> Event Emitter ─�
 - **State Machine**: Tracks per-car state, detects transitions, manages battery threshold flags
 - **Event Emitter**: 5-second debounce window, prevents duplicate events
 - **Relay Client**: HMAC-SHA256 signed requests, 3 retries with exponential backoff
+- **Remote config**: the relay's reply may carry Live Activity tick intervals,
+  applied on the next tick and clamped locally; a malformed or absent block
+  leaves the built-in defaults in place and never fails the event
 
 ## Changelog
 
