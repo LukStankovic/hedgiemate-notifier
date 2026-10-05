@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hedgiemate/notifier/relay"
+	"github.com/LukStankovic/hedgiemate-notifier/relay"
 )
 
 // debounceDuration coalesces rapid same-(carID, eventType) repeats; the timer

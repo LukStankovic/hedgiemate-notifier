@@ -8,11 +8,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hedgiemate/notifier/config"
-	"github.com/hedgiemate/notifier/mqtt"
-	"github.com/hedgiemate/notifier/relay"
-	"github.com/hedgiemate/notifier/remotecfg"
-	"github.com/hedgiemate/notifier/state"
+	"github.com/LukStankovic/hedgiemate-notifier/config"
+	"github.com/LukStankovic/hedgiemate-notifier/mqtt"
+	"github.com/LukStankovic/hedgiemate-notifier/relay"
+	"github.com/LukStankovic/hedgiemate-notifier/remotecfg"
+	"github.com/LukStankovic/hedgiemate-notifier/state"
 )
 
 // version is the notifier's build version, injected at build time via

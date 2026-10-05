@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hedgiemate/notifier/mqtt"
-	"github.com/hedgiemate/notifier/relay"
-	"github.com/hedgiemate/notifier/remotecfg"
+	"github.com/LukStankovic/hedgiemate-notifier/mqtt"
+	"github.com/LukStankovic/hedgiemate-notifier/relay"
+	"github.com/LukStankovic/hedgiemate-notifier/remotecfg"
 )
 
 // activeRoutePayload matches the JSON from TeslaMate's "active_route" MQTT topic.
