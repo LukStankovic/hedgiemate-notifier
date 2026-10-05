@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/hedgiemate/notifier/mqtt"
+	"github.com/LukStankovic/hedgiemate-notifier/mqtt"
 )
 
 func carStore(path string) *jsonStore[map[string]CachedCar] {

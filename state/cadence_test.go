@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hedgiemate/notifier/mqtt"
-	"github.com/hedgiemate/notifier/remotecfg"
+	"github.com/LukStankovic/hedgiemate-notifier/mqtt"
+	"github.com/LukStankovic/hedgiemate-notifier/remotecfg"
 )
 
 func cadenceManager(t *testing.T, cfg map[string]string) *Manager {
